@@ -1,0 +1,100 @@
+# kanban-threads Specification
+
+## Purpose
+
+以纯文件形式持久承载跨会话的项目目标、进展与决策：为人类提供可读的项目节点信息，为 Agent 提供每次会话启动时的上下文与记录约定，弥补 OpenSpec 在"跨 change 的笼统目标"层面的空白。
+
+## Requirements
+
+### Requirement: 线程以独立目录中的文件形式持久存储
+
+系统 SHALL 在仓库根部的 `kanban/` 目录中维护线程层的全部状态，作为单一事实来源（SSOT）。每条线程 SHALL 是 `kanban/threads/<id>-<slug>/` 下的一个目录，内含 `thread.md` 卷宗。线程层 MUST NOT 写入或修改 `openspec/` 内部的目录结构与文件（`config.yaml` 的配置项除外）。线程与 OpenSpec change 之间 SHALL 仅以 change 名字进行松耦合引用。
+
+#### Scenario: 查看全部线程
+
+- **WHEN** 用户或 Agent 打开 `kanban/threads/` 目录
+- **THEN** 每条线程对应一个独立目录，其 `thread.md` 完整描述该线程的目标、进展与决策，无需任何外部工具即可阅读
+
+#### Scenario: 线程引用 change
+
+- **WHEN** 一条线程关联一个或多个 OpenSpec change
+- **THEN** 卷宗中仅以 change 名字（如 `add-user-auth`）引用，不复制 change 的内容，OpenSpec 侧的归档、迁移不影响卷宗文件本身的可读性
+
+### Requirement: 线程卷宗包含必备小节
+
+每份 `thread.md` SHALL 至少包含：`status` 状态字段、`## 目标`（创建时由用户填写）、`## 已完成的工作`、`## 决策`（每条决策 MUST 包含决定内容与原因）、`## Changes`（关联的 change 名字列表）。项目 SHALL 在 `kanban/templates/thread.md` 提供新建线程的模板。
+
+#### Scenario: 从模板创建线程
+
+- **WHEN** 用户复制 `kanban/templates/thread.md` 创建新线程
+- **THEN** 所得卷宗包含全部必备小节，用户只需填写目标即可投入使用
+
+#### Scenario: 决策记录包含原因
+
+- **WHEN** 一条决策被记入卷宗
+- **THEN** 该条目同时包含"决定了什么"与"为什么"，使后续会话不会重提已被否决的方案
+
+### Requirement: 线程生命周期与当前指针
+
+线程 SHALL 具有四个状态：`立项`、`规划`、`实现`、`完成`。状态流转 SHALL 由用户通过编辑卷宗中的 `status` 字段手动完成。系统 SHALL 通过 `kanban/current` 文件记录当前活跃线程的标识；该文件为空或不存在时，表示无活跃线程。
+
+#### Scenario: 用户激活线程
+
+- **WHEN** 用户将某线程的标识写入 `kanban/current`
+- **THEN** 此后的会话将该线程视为当前活跃线程
+
+#### Scenario: 用户流转状态
+
+- **WHEN** 用户将卷宗中的 `status` 从 `立项` 改为 `规划`
+- **THEN** 该线程即进入规划状态，无需其他系统动作
+
+### Requirement: Agent 会话启动时读取当前线程
+
+当 `kanban/current` 指向某条线程时，Agent SHALL 在会话开始阶段读取该线程的卷宗，向用户复述其对当前状态的理解并与用户校准，再开始具体工作。
+
+#### Scenario: 存在活跃线程
+
+- **WHEN** 用户开启新会话且 `kanban/current` 指向线程 T
+- **THEN** Agent 在正式工作前复述线程 T 的目标、当前进展与下一步，并请用户确认或纠正
+
+#### Scenario: 无活跃线程
+
+- **WHEN** `kanban/current` 为空或不存在
+- **THEN** Agent 不执行线程校准，正常工作
+
+### Requirement: 拐点时刻的捕获约定
+
+对话中出现以下拐点时，Agent SHALL 询问用户是否需要记入当前线程卷宗：一个方向被否决、一个想法验证出结论、做出影响线程目标的决定、线程被搁置或重启。Agent MUST NOT 每轮都询问；用户拒绝后 MUST NOT 就同一事件再次追问。记录 SHALL 经用户确认后追加到卷宗对应小节。
+
+#### Scenario: 方向被否决
+
+- **WHEN** 对话中用户否定了某个探索方向
+- **THEN** Agent 询问"要记入线程卷宗吗"；用户同意后，该方向与否决原因被追加到 `## 决策`
+
+#### Scenario: 用户拒绝记录
+
+- **WHEN** Agent 询问是否记录而用户回答不用
+- **THEN** Agent 不记录，且不就同一事件再次追问
+
+### Requirement: 归档后的非侵入式蒸馏
+
+当一个属于某线程的 OpenSpec change 完成归档后，Agent SHALL 从该 change 的工件（proposal、design、tasks）蒸馏出一小段总结，追加到所属线程卷宗的 `## 已完成的工作`。该行为 SHALL 通过 `openspec/config.yaml` 的 `operations.archive.guidance` 配置项与 `AGENTS.md` 常驻约定共同提示，MUST NOT 修改 OpenSpec 技能文件或 CLI。
+
+#### Scenario: 归档属于线程的 change
+
+- **WHEN** `openspec-archive-change` 流程完成，且被归档的 change 出现在某线程的 `## Changes` 列表中
+- **THEN** Agent 将该 change 的动机、关键决定与完成情况蒸馏为一小段文字，追加到该线程的 `## 已完成的工作`
+
+#### Scenario: 归档不属于任何线程的 change
+
+- **WHEN** 归档的 change 不属于任何线程
+- **THEN** Agent 不执行蒸馏动作
+
+### Requirement: 提供人工操作文档
+
+系统 SHALL 在 `kanban/README.md` 提供操作文档，覆盖以下手动操作：创建线程（复制模板、填写目标）、激活线程（写入 `current`）、手动记录（追加小节内容）、流转状态（修改 `status`）、关联 change（在 `## Changes` 中登记）。
+
+#### Scenario: 新用户学会操作
+
+- **WHEN** 一个不了解本系统的用户阅读 `kanban/README.md`
+- **THEN** 其能独立完成创建线程、激活线程、记录进展与流转状态，全程只需文本编辑器

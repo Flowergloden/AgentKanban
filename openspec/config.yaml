@@ -18,11 +18,7 @@ context: |
 # Per-operation guidance (optional)
 # Add advisory guidance for how apply and archive work should be conducted.
 # This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+operations:
+  archive:
+    guidance:
+      - 归档完成后，若被归档的 change 出现在某线程卷宗（kanban/threads/*/thread.md）的 ## Changes 列表中，则从该 change 的工件（proposal、design、tasks）蒸馏出一小段总结（动机、关键决定、完成情况），追加到该线程卷宗的 ## 已完成的工作；若 change 不属于任何线程，则不执行蒸馏动作。

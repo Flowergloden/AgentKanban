@@ -1,6 +1,6 @@
 # 看板可视化
 
-status: 实现
+status: 完成
 
 ## 目标
 
@@ -17,6 +17,9 @@ status: 实现
 - 2026-09-25：add-kanban-viewer 实施，任务 1.1–3.2 全部完成并逐项验证通过（健康检查、注册表排序/持久化/损坏兜底、TTL 自杀约 211s 后端口释放、active-thread 三态、静态托管、ensure 幂等拉起、heartbeat 静默 fail-open、前端带参/无参/下拉切换/无活跃线程提示，前端用桌面端内置浏览器面板实测）。5.1 通过：用户重启 App 后服务被 hook 自动拉起，注册表含本项目。
 - 2026-09-25：实测结论——**桌面端不派发插件 `commands` 注册的斜杠命令**（`/plugins info` 计数正常，但命令不进补全列表、回车不注入命令体；无上下文项目中 Agent 对 `/kanban:open` 无感知）。已新增 `skills/kanban-open/SKILL.md` 作为桌面端入口，command 保留供 CLI。
 - 2026-09-25：OpenSpec change `add-kanban-viewer` 完成并归档（→ `openspec/changes/archive/2026-09-25-add-kanban-viewer`），delta spec 同步生成主 spec `openspec/specs/kanban-viewer/spec.md`。蒸馏：动机——为看板提供 active thread 可视化页面，用户无需手动维护后台进程；关键决定——全局单服务 + 项目注册表、TTL=180s 自杀、桌面端入口改用 skill；完成情况——proposal/specs/design/tasks 全部完成（14/14 任务），实现逐项实测通过，主 spec 通过 `openspec validate --strict`。
+- 2026-09-26：OpenSpec change `add-thread-management` 完成并归档（→ `openspec/changes/archive/2026-09-26-add-thread-management`），delta spec 已同步进主 spec `openspec/specs/kanban-viewer/spec.md`（7 个 ADDED 需求 + MODIFIED 掉"只读"约束，validate --strict 通过）。蒸馏：动机——首版只能看 active thread 原文，线程的浏览/编辑/创建/删除/激活/流转须手动改文件，本 change 把 `kanban/` 操作手册动作全部图形化；关键决定——服务对 `kanban/` 从只读升级为读写（BREAKING，反转 kanban-viewer 的只读约束）、乐观并发用内容 SHA-256 指纹（非 mtime）+ 409、小节按 `## ` 标题切片替换且读写做"净内容"转换保证落盘格式不漂移、前端重写为 vendored Preact+htm 无构建、Agent 生成小节（决策/已完成的工作/Changes）默认只读需解锁编辑；完成情况——proposal/specs/design/tasks 全部完成（23/23 任务），桌面端内置浏览器面板全链路实测通过（含拖拽流转、409 冲突、多写者场景），既有接口回归通过。
+
+- 2026-09-26：修复注册表 Windows 路径重复问题——同一 root 曾被以 "\" 与 "/" 两种形式各存一份。`server.mjs` 新增 `normalizeRoot()`（统一转 "/"），覆盖三处写入点（loadRegistry、/api/register、/api/heartbeat）；loadRegistry 对归一化后的重复 key 按 max(lastSeen) 合并并立即落盘。已实测：杀掉旧服务后由 ensure 拉起的注册表只剩 "/" 形式单一条目，heartbeat 续写不再生成分身。
 
 ## 决策
 
@@ -38,3 +41,4 @@ status: 实现
 ## Changes
 
 - add-kanban-viewer
+- add-thread-management

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板</title>
+<style>
+  body { font-family: system-ui, "Segoe UI", sans-serif; margin: 0; color: #1f2328; background: #f6f8fa; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #fff; border-bottom: 1px solid #d0d7de; position: sticky; top: 0; }
+  header .title { font-weight: 600; }
+  select { font-size: 13px; max-width: 50vw; padding: 4px 6px; }
+  #thread-label { font-size: 13px; color: #57606a; }
+  main { padding: 20px; }
+  pre { background: #fff; border: 1px solid #d0d7de; border-radius: 6px; padding: 16px; white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; margin: 0; }
+  .empty { color: #57606a; padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">看板</span>
+  <select id="project-select" hidden></select>
+  <span id="thread-label"></span>
+</header>
+<main id="content"><div class="empty">加载中…</div></main>
+<script>
+const select = document.getElementById('project-select');
+const threadLabel = document.getElementById('thread-label');
+const content = document.getElementById('content');
+
+function showMessage(text) {
+  content.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'empty';
+  div.textContent = text;
+  content.appendChild(div);
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function showThread(root) {
+  threadLabel.textContent = '';
+  let data;
+  try {
+    data = await fetchJson('/api/active-thread?root=' + encodeURIComponent(root));
+  } catch {
+    showMessage('查询看板数据失败');
+    return;
+  }
+  if (data.status === 'ok') {
+    threadLabel.textContent = '线程：' + data.threadId;
+    content.innerHTML = '';
+    const pre = document.createElement('pre');
+    pre.textContent = data.markdown;
+    content.appendChild(pre);
+  } else if (data.status === 'no-active-thread') {
+    showMessage('当前无活跃线程');
+  } else if (data.status === 'thread-missing') {
+    showMessage('线程卷宗缺失：' + data.threadId);
+  } else {
+    showMessage('未知状态');
+  }
+}
+
+async function init() {
+  const paramRoot = new URLSearchParams(location.search).get('root');
+  let projects = [];
+  try {
+    projects = await fetchJson('/api/projects');
+  } catch {
+  }
+  const roots = projects.map((p) => p.root);
+  if (paramRoot && !roots.includes(paramRoot)) roots.push(paramRoot);
+  if (roots.length > 0) {
+    for (const root of roots) {
+      const option = document.createElement('option');
+      option.value = root;
+      option.textContent = root;
+      select.appendChild(option);
+    }
+    select.hidden = false;
+    select.addEventListener('change', () => showThread(select.value));
+  }
+  const current = paramRoot || roots[0];
+  if (!current) {
+    showMessage('注册表为空：尚未有项目注册，请先在某个项目中启动 kimi-code 会话。');
+    return;
+  }
+  select.value = current;
+  showThread(current);
+}
+
+init();
+</script>
+</body>
+</html>

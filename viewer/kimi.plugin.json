@@ -1,0 +1,20 @@
+{
+  "$schema": "https://kimi.com/schemas/kimi.plugin.schema.json",
+  "name": "kanban",
+  "version": "0.1.0",
+  "description": "看板可视化：随 kimi-code 会话自动生灭的本地 Web 服务，展示当前项目 active thread 的 thread.md 原文",
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "node ./server/ensure.mjs",
+      "timeout": 15
+    },
+    {
+      "event": "SessionHeartbeat",
+      "command": "node ./server/heartbeat.mjs",
+      "timeout": 10
+    }
+  ],
+  "commands": "./commands/",
+  "skills": "./skills/"
+}

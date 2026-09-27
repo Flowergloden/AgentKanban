@@ -19,10 +19,10 @@
 ## 4. 发布流水线
 
 - [x] 4.1 新建 `.github/workflows/release.yml`：`v*` tag 触发；校验 tag 版本与 `viewer/kimi.plugin.json` 的 `version` 一致（不一致则失败）；在 `viewer/` 目录内打包 `kanban-plugin.zip`；`gh release create` 上传附件；验证：workflow 语法有效（`gh workflow view` 或 actionlint），zip 内 `kimi.plugin.json` 位于根
-- [ ] 4.2 发布首个版本：确认 manifest 为 `0.2.0`，推送 `v0.2.0` tag；验证：Action 成功，release 页面存在 `kanban-plugin.zip` 附件，且 `releases/latest/download/kanban-plugin.zip` 可下载
+- [x] 4.2 发布首个版本：确认 manifest 为 `0.2.0`，推送 `v0.2.0` tag；验证：Action 成功，release 页面存在 `kanban-plugin.zip` 附件，且 `releases/latest/download/kanban-plugin.zip` 可下载
 
 ## 5. 安装切换与端到端验收
 
-- [ ] 5.1 本机切换安装源：`/plugins remove kanban` 后以 release URL 重新安装；验证：`installed.json` 中 kanban 的 source 变为 zip-url，新会话看板服务、页面、skill 入口均正常
+- [x] 5.1 本机切换安装源：`/plugins remove kanban` 后以 release URL 重新安装；验证：`installed.json` 中 kanban 的 source 变为 zip-url，新会话看板服务、页面、skill 入口均正常
 - [ ] 5.2 实测 zip-url 安装的更新检测行为（发一个 0.2.1 或重装观察管理器是否提示可更新），把结论写进 release notes；验证：发布说明中包含明确的更新路径说明
 - [ ] 5.3 端到端确认 spec 行为：看板项目（本仓库）会话校准/拐点询问正常；无 `kanban/` 的项目不被创建结构、无看板动作；归档属于线程的 change 时蒸馏仍被提示；验证：上述场景各实测一次

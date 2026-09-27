@@ -2,7 +2,7 @@
 
 ## 线程看板（kanban/）常驻约定
 
-本项目用 `kanban/` 目录承载跨会话、跨 change 的笼统目标（线程），操作手册见 `kanban/README.md`。Agent 必须遵守以下三条约定：
+本项目用 `kanban/` 目录承载跨会话的笼统目标（线程），操作手册见 `kanban/README.md`。OpenSpec 工作流是可选路径而非必经：小需求可直接以一句话记入线程卷宗并跟进；是否创建 OpenSpec change 由用户自行决定（手动调用），Agent 不得默认把需求路由进 OpenSpec。Agent 必须遵守以下三条约定：
 
 ### 约定一：会话开始时的线程校准
 

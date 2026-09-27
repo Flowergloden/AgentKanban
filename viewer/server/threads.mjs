@@ -352,11 +352,20 @@ function slugify(title) {
 }
 
 // 线程创建
-export async function create(root, title, slug) {
+export async function create(root, title, slug, goal) {
   if (typeof title !== 'string' || !title.trim()) {
     throw new ThreadError('bad-request', '标题是必填项');
   }
   title = title.trim();
+  if (goal !== undefined && goal !== null) {
+    if (typeof goal !== 'string') {
+      throw new ThreadError('bad-request', '目标必须是字符串');
+    }
+    goal = goal.trim();
+    if (goal.length > 5000) {
+      throw new ThreadError('bad-request', '目标过长（上限 5000 字符）');
+    }
+  }
   let finalSlug;
   // 标记值占位（序号前缀已保证目录唯一）时豁免 slug 冲突检查
   let exemptConflict = false;
@@ -406,7 +415,17 @@ export async function create(root, title, slug) {
     await fs.rmdir(dir);
     throw new ThreadError('bad-request', '卷宗模板缺少标题行');
   }
-  await fs.writeFile(path.join(dir, 'thread.md'), text, 'utf8');
+  let finalText = text;
+  if (goal) {
+    try {
+      // 填写目标：替换模板注释，写入正式内容（replaceSection 保持小节排版）
+      finalText = replaceSection(text, '目标', goal);
+    } catch (err) {
+      await fs.rmdir(dir);
+      throw err;
+    }
+  }
+  await fs.writeFile(path.join(dir, 'thread.md'), finalText, 'utf8');
   return { id };
 }
 

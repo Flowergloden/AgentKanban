@@ -36,8 +36,8 @@ export const api = {
   getNote: (root) => request(`/api/note${q(root)}`),
   updateNote: (root, content, fingerprint) =>
     request('/api/note', jsonOptions('PUT', { root, content, fingerprint })),
-  createThread: (root, title, slug) =>
-    request('/api/threads', jsonOptions('POST', { root, title, slug: slug || undefined })),
+  createThread: (root, title, slug, goal) =>
+    request('/api/threads', jsonOptions('POST', { root, title, slug: slug || undefined, goal: goal || undefined })),
   deleteThread: (root, id) =>
     request('/api/thread', jsonOptions('DELETE', { root, id })),
   setActive: (root, id) =>

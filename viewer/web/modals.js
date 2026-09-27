@@ -3,6 +3,7 @@ import { api } from './api.js';
 
 export function CreateModal({ root, onClose, onCreated }) {
   const [title, setTitle] = useState('');
+  const [goal, setGoal] = useState('');
   const [slug, setSlug] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -19,7 +20,7 @@ export function CreateModal({ root, onClose, onCreated }) {
     setBusy(true);
     setError('');
     try {
-      const { id } = await api.createThread(root, title.trim(), slug.trim());
+      const { id } = await api.createThread(root, title.trim(), slug.trim(), goal.trim());
       onCreated(id);
     } catch (err) {
       setError(err.message);
@@ -33,6 +34,14 @@ export function CreateModal({ root, onClose, onCreated }) {
         <h3>新建线程</h3>
         <label>标题（必填）</label>
         <input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder="例如：视图体系探索" autoFocus />
+        <label>目标（选填）：这条线程要达成的笼统目标，写入卷宗「目标」小节</label>
+        <textarea
+          class="note-editor"
+          style="min-height: 64px"
+          value=${goal}
+          onInput=${(e) => setGoal(e.target.value)}
+          placeholder="例如：验证新版看板的交互细节，填补不合理或有障碍之处"
+        />
         <label>slug（选填，kebab-case；留空时英文标题自动生成，非英文标题将由 Agent 在会话校准时自动命名）</label>
         <input value=${slug} onInput=${(e) => setSlug(e.target.value)} placeholder="例如：view-system" />
         ${error && html`<div class="modal-error">${error}</div>`}

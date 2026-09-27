@@ -250,7 +250,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/api/threads') {
       const body = await readJsonBody(req);
-      const result = await threads.create(requireRoot(body.root), body.title, body.slug);
+      const result = await threads.create(requireRoot(body.root), body.title, body.slug, body.goal);
       return sendJson(res, 200, result);
     }
 

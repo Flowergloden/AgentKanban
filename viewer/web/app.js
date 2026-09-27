@@ -20,6 +20,7 @@ function App() {
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   // 初始化：?root= 仅读取一次；无参数落到 lastSeen 最近项目（行为同现版）
   useEffect(() => {
@@ -57,7 +58,15 @@ function App() {
   useEffect(() => {
     setThreads(null);
     setSelectedId(null);
-    if (root) refresh(root);
+    setNotice('');
+    if (!root) return;
+    // 先幂等初始化项目 kanban 结构（旧版服务无该接口时静默跳过），再刷新列表
+    api.init(root)
+      .then((r) => {
+        if (r?.created?.length) setNotice(`已自动初始化：${r.created.join('、')}`);
+      })
+      .catch(() => {})
+      .finally(() => refresh(root));
   }, [root]);
 
   const activeThread = threads?.find((t) => t.active);
@@ -85,6 +94,7 @@ function App() {
       <button onClick=${() => refresh()} disabled=${!root}>刷新</button>
     </header>
     <main>
+      ${notice && html`<div class="hint">${notice}</div>`}
       ${error && html`<div class="empty">${error}</div>`}
       ${!error && root && threads === null && html`<div class="empty">加载中…</div>`}
       ${!error && threads !== null && html`

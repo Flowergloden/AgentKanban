@@ -26,6 +26,7 @@ const q = (root) => `?root=${encodeURIComponent(root)}`;
 
 export const api = {
   listProjects: () => request('/api/projects'),
+  init: (root) => request('/api/init', jsonOptions('POST', { root })),
   listThreads: (root) => request(`/api/threads${q(root)}`),
   getThread: (root, id) => request(`/api/thread${q(root)}&id=${encodeURIComponent(id)}`),
   updateSection: (root, id, section, content, fingerprint) =>

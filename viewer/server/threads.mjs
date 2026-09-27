@@ -24,6 +24,67 @@ function threadsDir(root) {
   return path.join(kanbanDir(root), 'threads');
 }
 
+// 内置默认卷宗模板：内容与 kanban/templates/thread.md 保持一致（项目模板缺失时兜底创建）
+const DEFAULT_THREAD_TEMPLATE = `# <线程标题>
+
+status: 立项
+
+<!-- 状态可选值：立项、规划、实现、完成。流转方式：直接修改上一行的 status 值。 -->
+
+## 目标
+
+<!-- 创建时填写：这条线程要达成的笼统目标（如实现某模块、验证某想法）。 -->
+
+## 已完成的工作
+
+<!-- 每完成一段工作，在此追加一条记录（含日期与概要）。属于本线程的 OpenSpec change 归档后，其蒸馏总结也追加在这里。 -->
+
+## 决策
+
+<!-- 每条决策 MUST 同时包含"决定了什么"与"为什么"，格式：
+- **决定**：……
+  **原因**：……
+-->
+
+## Changes
+
+<!-- 关联的 OpenSpec change 名字列表（仅登记名字，松耦合引用），例如：
+- add-xxx
+-->
+`;
+
+async function pathExists(p) {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// 幂等补齐 kanban 最小结构，返回 { created }（本次新建的路径列表，相对 root 的 "/" 形式）
+export async function ensureLayout(root) {
+  const created = [];
+  const dirs = [kanbanDir(root), threadsDir(root), path.join(kanbanDir(root), 'templates')];
+  for (const dir of dirs) {
+    if (!(await pathExists(dir))) {
+      await fs.mkdir(dir, { recursive: true });
+      created.push(path.relative(root, dir).replace(/\\/g, '/'));
+    }
+  }
+  const templateFile = path.join(kanbanDir(root), 'templates', 'thread.md');
+  if (!(await pathExists(templateFile))) {
+    await fs.writeFile(templateFile, DEFAULT_THREAD_TEMPLATE, 'utf8');
+    created.push(path.relative(root, templateFile).replace(/\\/g, '/'));
+  }
+  const currentFile = path.join(kanbanDir(root), 'current');
+  if (!(await pathExists(currentFile))) {
+    await fs.writeFile(currentFile, '', 'utf8');
+    created.push(path.relative(root, currentFile).replace(/\\/g, '/'));
+  }
+  return { created };
+}
+
 async function atomicWrite(file, content) {
   const tmpFile = file + '.tmp';
   await fs.writeFile(tmpFile, content, 'utf8');
@@ -256,12 +317,8 @@ export async function create(root, title, slug) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(finalSlug)) {
     throw new ThreadError('bad-request', `slug 必须是 kebab-case：${finalSlug}`);
   }
-  let entries = [];
-  try {
-    entries = await fs.readdir(threadsDir(root), { withFileTypes: true });
-  } catch {
-    throw new ThreadError('bad-request', `项目缺少 kanban/threads 目录：${root}`);
-  }
+  await ensureLayout(root);
+  const entries = await fs.readdir(threadsDir(root), { withFileTypes: true });
   let maxNum = 0;
   for (const entry of entries) {
     const m = entry.name.match(/^(\d{4})-(.+)$/);
@@ -280,12 +337,11 @@ export async function create(root, title, slug) {
     if (err.code === 'EEXIST') throw new ThreadError('conflict', `线程目录已存在：${id}`);
     throw err;
   }
-  let template;
+  let template = DEFAULT_THREAD_TEMPLATE;
   try {
     template = await fs.readFile(path.join(kanbanDir(root), 'templates', 'thread.md'), 'utf8');
   } catch {
-    await fs.rmdir(dir);
-    throw new ThreadError('bad-request', '缺少卷宗模板 kanban/templates/thread.md');
+    // 模板文件不可读（理论上 ensureLayout 已补齐）时以内置默认模板兜底
   }
   const text = template.replace(/^# .*$/m, `# ${title}`);
   if (text === template) {
@@ -307,6 +363,7 @@ export async function remove(root, id) {
   }
   const activeId = await readActiveId(root);
   if (activeId === id) {
+    await ensureLayout(root);
     await atomicWrite(path.join(kanbanDir(root), 'current'), '');
   }
   return { ok: true };
@@ -316,6 +373,7 @@ export async function remove(root, id) {
 export async function setActive(root, id) {
   const currentFile = path.join(kanbanDir(root), 'current');
   if (id === null || id === '') {
+    await ensureLayout(root);
     await atomicWrite(currentFile, '');
     return { ok: true };
   }
@@ -325,6 +383,7 @@ export async function setActive(root, id) {
   } catch {
     throw new ThreadError('thread-missing', `线程不存在：${id}`);
   }
+  await ensureLayout(root);
   await atomicWrite(currentFile, id);
   return { ok: true };
 }

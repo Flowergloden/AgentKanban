@@ -193,6 +193,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await queryActiveThread(root));
     }
 
+    if (req.method === 'POST' && url.pathname === '/api/init') {
+      const body = await readJsonBody(req);
+      return sendJson(res, 200, await threads.ensureLayout(requireRoot(body.root)));
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/threads') {
       const root = requireRoot(url.searchParams.get('root'));
       return sendJson(res, 200, await threads.parseList(root));

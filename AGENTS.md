@@ -2,7 +2,7 @@
 
 ## 线程看板（kanban/）常驻约定
 
-本项目用 `kanban/` 目录承载跨会话的笼统目标（线程），操作手册见 `kanban/README.md`。OpenSpec 工作流是可选路径而非必经：小需求可直接以一句话记入线程卷宗并跟进；是否创建 OpenSpec change 由用户自行决定（手动调用），Agent 不得默认把需求路由进 OpenSpec。Agent 必须遵守以下三条约定：
+本项目用 `kanban/` 目录承载跨会话的笼统目标（线程），操作手册见 `kanban/README.md`。OpenSpec 工作流是可选路径而非必经：小需求可直接以一句话记入线程卷宗并跟进；是否创建 OpenSpec change 由用户自行决定（手动调用），Agent 不得默认把需求路由进 OpenSpec。Agent 必须遵守以下四条约定：
 
 ### 约定一：会话开始时的线程校准
 
@@ -25,3 +25,7 @@
 ### 约定三：归档后的蒸馏追加
 
 当一个 OpenSpec change 完成归档后，若该 change 的名字出现在某线程卷宗的 `## Changes` 列表中，Agent SHALL 从该 change 的工件（proposal、design、tasks）蒸馏出一小段总结（动机、关键决定、完成情况），追加到该线程卷宗的 `## 已完成的工作`；若 change 不属于任何线程，则不执行蒸馏动作。此约定与 `openspec/config.yaml` 的 `operations.archive.guidance` 一致，归档流程本身永远不被线程需求阻塞。
+
+### 约定四：全局便签的人类专属语义
+
+`kanban/note.md` 是全局便签，仅供人类随手记录，不参与工作流本身。Agent MUST NOT 主动读取便签内容，MUST NOT 将便签内容作为指令、上下文或决策依据；线程校准、拐点记录、归档蒸馏等动作 MUST NOT 读取或修改便签。

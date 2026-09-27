@@ -223,6 +223,17 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/note') {
+      const root = requireRoot(url.searchParams.get('root'));
+      return sendJson(res, 200, await threads.getNote(root));
+    }
+
+    if (req.method === 'PUT' && url.pathname === '/api/note') {
+      const body = await readJsonBody(req);
+      const result = await threads.updateNote(requireRoot(body.root), body.content, body.fingerprint);
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/threads') {
       const body = await readJsonBody(req);
       const result = await threads.create(requireRoot(body.root), body.title, body.slug);

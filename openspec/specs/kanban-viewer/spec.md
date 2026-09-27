@@ -143,6 +143,25 @@
 - **WHEN** 请求指向不存在的线程或卷宗中不存在的小节
 - **THEN** 接口返回明确错误状态，文件不发生任何变化
 
+### Requirement: 全局便签读写接口与页面入口
+
+服务 SHALL 提供全局便签的读取接口（`GET /api/note`）与保存接口（`PUT /api/note`）：读取返回 `kanban/note.md` 原文与文件指纹，文件缺失时按空内容返回而不报错；保存以指纹做乐观并发校验，指纹不匹配时 MUST 返回 409 且不写盘，匹配时 SHALL 原子写盘（临时文件 + 重命名）并返回新指纹。看板页面 SHALL 在项目上下文中提供「便签」入口，弹出编辑模态框展示与修改便签内容，保存遇 409 时 SHALL 提示冲突并提供重新加载入口，MUST NOT 静默覆盖。便签内容 MUST NOT 进入线程工作流：卷宗解析、Agent 会话校准等动作不读取便签。
+
+#### Scenario: 打开并保存便签
+
+- **WHEN** 用户点击页面头部「便签」按钮，在弹出的编辑框中修改内容并保存
+- **THEN** `kanban/note.md` 被原子写盘，接口返回新指纹，编辑框关闭
+
+#### Scenario: 便签文件缺失
+
+- **WHEN** 项目的 `kanban/note.md` 不存在时调用读取接口
+- **THEN** 接口返回空内容与空内容的指纹，不产生错误，也不自动创建文件
+
+#### Scenario: 便签保存冲突
+
+- **WHEN** 保存便签时携带的指纹与当前文件不一致（文件已被其他写者修改）
+- **THEN** 接口返回 409，页面提示"文件已被修改"并提供重新加载入口，不发生静默覆盖
+
 ### Requirement: 线程状态流转与活跃切换接口
 
 服务 SHALL 提供线程 status 流转接口：仅接受 `立项`、`规划`、`实现`、`完成` 四个合法值，非法值 SHALL 返回错误且不写盘；流转 SHALL 仅修改卷宗中的 status 字段，其余内容不变。服务 SHALL 提供设置/取消活跃线程的接口：设置时将线程标识写入 `kanban/current`（同时刻最多一条活跃线程），取消时清空该文件。
@@ -164,12 +183,12 @@
 
 ### Requirement: kanban 结构初始化与自动补全
 
-服务 SHALL 提供初始化接口：对任意项目根路径创建看板所需的最小结构——`kanban/`、`kanban/threads/`、`kanban/templates/` 目录、`kanban/templates/thread.md` 卷宗模板与 `kanban/current`（空文件）；初始化 MUST 幂等：已存在的目录与文件不得被修改或覆盖。项目自有模板存在时 MUST 优先使用；模板文件缺失时服务 SHALL 以内置默认模板兜底创建。插件 SessionStart hook SHALL 在服务就绪后自动调用初始化接口初始化会话所在项目。看板页面加载项目（含切换项目）时 SHALL 自动调用初始化接口；服务不支持该接口时页面 MUST 正常降级（跳过初始化，其余功能不受影响）。线程创建、活跃切换等写操作在结构缺失时 SHALL 自动补齐结构后完成，不再返回"缺少目录/模板"类错误。
+服务 SHALL 提供初始化接口：对任意项目根路径创建看板所需的最小结构——`kanban/`、`kanban/threads/`、`kanban/templates/` 目录、`kanban/templates/thread.md` 卷宗模板、`kanban/current`（空文件）与 `kanban/note.md` 全局便签（带"仅供人类阅读"说明头注释）；初始化 MUST 幂等：已存在的目录与文件不得被修改或覆盖。项目自有模板存在时 MUST 优先使用；模板文件缺失时服务 SHALL 以内置默认模板兜底创建。插件 SessionStart hook SHALL 在服务就绪后自动调用初始化接口初始化会话所在项目。看板页面加载项目（含切换项目）时 SHALL 自动调用初始化接口；服务不支持该接口时页面 MUST 正常降级（跳过初始化，其余功能不受影响）。线程创建、活跃切换等写操作在结构缺失时 SHALL 自动补齐结构后完成，不再返回"缺少目录/模板"类错误。
 
 #### Scenario: 初始化空白项目
 
 - **WHEN** 对一个不存在 `kanban/` 的项目调用初始化接口
-- **THEN** `kanban/`、`kanban/threads/`、`kanban/templates/` 目录被创建，`kanban/templates/thread.md` 与空的 `kanban/current` 被创建，接口返回本次新建的路径列表
+- **THEN** `kanban/`、`kanban/threads/`、`kanban/templates/` 目录被创建，`kanban/templates/thread.md`、空的 `kanban/current` 与含说明头的 `kanban/note.md` 被创建，接口返回本次新建的路径列表
 
 #### Scenario: 重复初始化幂等
 

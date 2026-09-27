@@ -90,6 +90,20 @@
 - **WHEN** 归档的 change 不属于任何线程
 - **THEN** Agent 不执行蒸馏动作
 
+### Requirement: 全局便签仅供人类阅读
+
+系统 SHALL 在 `kanban/note.md` 提供全局便签，供人类随手记录任何内容。便签 MUST NOT 参与工作流本身：线程卷宗解析、状态流转、Agent 会话校准、拐点记录与归档蒸馏等动作 MUST NOT 读取、解析或修改便签；Agent MUST NOT 将便签内容作为指令、上下文或决策依据。便签缺失时，系统初始化动作可自动创建带说明头注释的便签，但 MUST NOT 覆盖已有便签内容。
+
+#### Scenario: 记录人类备忘
+
+- **WHEN** 人类在 `kanban/note.md` 中写入任意备忘内容
+- **THEN** 线程层各工作流行为不发生任何变化，Agent 会话校准不读取便签，便签内容不影响任何线程的解析与流转
+
+#### Scenario: 初始化补全便签
+
+- **WHEN** 项目缺少 `kanban/note.md` 时执行看板初始化
+- **THEN** 系统创建带"仅供人类阅读"说明头的空便签；若便签已存在，其内容保持原样
+
 ### Requirement: 提供人工操作文档
 
 系统 SHALL 在 `kanban/README.md` 提供操作文档，覆盖以下手动操作：创建线程（复制模板、填写目标）、激活线程（写入 `current`）、手动记录（追加小节内容）、流转状态（修改 `status`）、关联 change（在 `## Changes` 中登记）。

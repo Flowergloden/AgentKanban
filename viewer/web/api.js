@@ -33,6 +33,9 @@ export const api = {
     request('/api/thread/section', jsonOptions('PUT', { root, id, section, content, fingerprint })),
   setStatus: (root, id, status) =>
     request('/api/thread/status', jsonOptions('POST', { root, id, status })),
+  getNote: (root) => request(`/api/note${q(root)}`),
+  updateNote: (root, content, fingerprint) =>
+    request('/api/note', jsonOptions('PUT', { root, content, fingerprint })),
   createThread: (root, title, slug) =>
     request('/api/threads', jsonOptions('POST', { root, title, slug: slug || undefined })),
   deleteThread: (root, id) =>

@@ -53,6 +53,10 @@ status: 立项
 -->
 `;
 
+// 内置默认全局便签：内容与语义见 kanban/README.md（仅供人类阅读，不参与工作流）
+const DEFAULT_NOTE_TEMPLATE = `<!-- 全局便签（kanban/note.md）：仅供人类随手记录，不参与任何工作流——Agent 不读取、不采用此处内容。看板页面头部「便签」按钮可读写本文件，也可用任意文本编辑器直接编辑。 -->
+`;
+
 async function pathExists(p) {
   try {
     await fs.access(p);
@@ -81,6 +85,11 @@ export async function ensureLayout(root) {
   if (!(await pathExists(currentFile))) {
     await fs.writeFile(currentFile, '', 'utf8');
     created.push(path.relative(root, currentFile).replace(/\\/g, '/'));
+  }
+  const noteFile = path.join(kanbanDir(root), 'note.md');
+  if (!(await pathExists(noteFile))) {
+    await fs.writeFile(noteFile, DEFAULT_NOTE_TEMPLATE, 'utf8');
+    created.push(path.relative(root, noteFile).replace(/\\/g, '/'));
   }
   return { created };
 }
@@ -280,6 +289,39 @@ export async function updateSection(root, id, section, content, expectedFingerpr
   const updated = replaceSection(text, section, String(content ?? ''));
   await atomicWrite(file, updated);
   return { fingerprint: fingerprint(updated) };
+}
+
+// 全局便签读取：文件缺失时按空内容对待（不自动创建，保证纯读取无副作用）
+export async function getNote(root) {
+  const file = path.join(kanbanDir(root), 'note.md');
+  try {
+    const text = await fs.readFile(file, 'utf8');
+    const stat = await fs.stat(file);
+    return { note: text, fingerprint: fingerprint(text), mtimeMs: Math.round(stat.mtimeMs) };
+  } catch (err) {
+    if (err.code === 'ENOENT') return { note: '', fingerprint: fingerprint(''), mtimeMs: 0 };
+    throw err;
+  }
+}
+
+// 全局便签保存（乐观并发，语义同 updateSection）
+export async function updateNote(root, content, expectedFingerprint) {
+  if (typeof content !== 'string') {
+    throw new ThreadError('bad-request', 'content 是必填项');
+  }
+  const file = path.join(kanbanDir(root), 'note.md');
+  let text;
+  try {
+    text = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    text = '';
+  }
+  if (fingerprint(text) !== expectedFingerprint) {
+    throw new ThreadError('conflict', '文件已被修改，指纹不匹配');
+  }
+  await atomicWrite(file, content);
+  return { fingerprint: fingerprint(content) };
 }
 
 // status 流转

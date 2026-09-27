@@ -3,7 +3,7 @@ import { api } from './api.js';
 import { ThreadTable, UnfinishedView } from './views-table.js';
 import { BoardView } from './views-board.js';
 import { ThreadDetail } from './detail.js';
-import { CreateModal, DeleteModal } from './modals.js';
+import { CreateModal, DeleteModal, NoteModal } from './modals.js';
 
 const VIEWS = [
   { key: 'table', label: '全部' },
@@ -18,6 +18,7 @@ function App() {
   const [threads, setThreads] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showNote, setShowNote] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -91,6 +92,7 @@ function App() {
         `)}
       </div>
       <button class="primary" onClick=${() => setShowCreate(true)} disabled=${!root}>新建线程</button>
+      <button onClick=${() => setShowNote(true)} disabled=${!root}>便签</button>
       <button onClick=${() => refresh()} disabled=${!root}>刷新</button>
     </header>
     <main>
@@ -122,6 +124,12 @@ function App() {
         root=${root}
         onClose=${() => setShowCreate(false)}
         onCreated=${async (id) => { setShowCreate(false); await refresh(); setSelectedId(id); }}
+      />
+    `}
+    ${showNote && html`
+      <${NoteModal}
+        root=${root}
+        onClose=${() => setShowNote(false)}
       />
     `}
     ${deleteTarget && html`

@@ -1,4 +1,4 @@
-import { html, useState } from './vendor/preact-standalone.module.js';
+import { html, useState, useEffect } from './vendor/preact-standalone.module.js';
 import { api } from './api.js';
 
 export function CreateModal({ root, onClose, onCreated }) {
@@ -39,6 +39,82 @@ export function CreateModal({ root, onClose, onCreated }) {
         <div class="modal-actions">
           <button onClick=${onClose} disabled=${busy}>取消</button>
           <button class="primary" onClick=${submit} disabled=${busy}>创建</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export function NoteModal({ root, onClose }) {
+  const [content, setContent] = useState(null); // null = 加载中
+  const [fingerprint, setFingerprint] = useState('');
+  const [conflict, setConflict] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setError('');
+    setConflict(false);
+    try {
+      const n = await api.getNote(root);
+      setContent(n.note);
+      setFingerprint(n.fingerprint);
+    } catch (err) {
+      setError(err.message);
+      setContent(null);
+    }
+  };
+
+  useEffect(() => { load(); }, [root]);
+
+  const save = async () => {
+    if (content === null || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const { fingerprint: fp } = await api.updateNote(root, content, fingerprint);
+      setFingerprint(fp);
+      setConflict(false);
+      onClose();
+    } catch (err) {
+      if (err.status === 409) {
+        setConflict(true);
+      } else {
+        setError(`保存失败：${err.message}`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return html`
+    <div class="modal-mask" onClick=${(e) => e.target === e.currentTarget && !busy && onClose()}>
+      <div class="modal modal--wide">
+        <h3>全局便签</h3>
+        <div class="hint" style="margin-top:0">仅供人类随手记录，不参与任何工作流（Agent 不读取、不采用此处内容）。内容保存到 <code>kanban/note.md</code>，也可用文本编辑器直接编辑。</div>
+        ${conflict && html`
+          <div class="banner-409">
+            <span>文件已被修改，当前编辑未保存到磁盘。请复制好你的修改后重新加载。</span>
+            <button class="primary" onClick=${load}>重新加载（丢弃本地编辑）</button>
+          </div>
+        `}
+        ${content === null ? html`
+          ${error ? html`
+            <div class="modal-error">加载失败：${error}</div>
+            <div class="modal-actions"><button onClick=${load}>重试</button></div>
+          ` : html`<div class="empty">加载中…</div>`}
+        ` : html`
+          ${error && html`<div class="modal-error">${error}</div>`}
+          <textarea
+            class="note-editor"
+            value=${content}
+            onInput=${(e) => setContent(e.target.value)}
+            autoFocus
+          />
+        `}
+        <div class="modal-actions">
+          <button onClick=${onClose} disabled=${busy}>取消</button>
+          <button class="primary" onClick=${save} disabled=${busy || content === null}>保存</button>
         </div>
       </div>
     </div>

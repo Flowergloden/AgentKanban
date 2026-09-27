@@ -33,7 +33,7 @@ export function CreateModal({ root, onClose, onCreated }) {
         <h3>新建线程</h3>
         <label>标题（必填）</label>
         <input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder="例如：视图体系探索" autoFocus />
-        <label>slug（选填，kebab-case；留空自动从标题生成）</label>
+        <label>slug（选填，kebab-case；留空时英文标题自动生成，非英文标题将由 Agent 在会话校准时自动命名）</label>
         <input value=${slug} onInput=${(e) => setSlug(e.target.value)} placeholder="例如：view-system" />
         ${error && html`<div class="modal-error">${error}</div>`}
         <div class="modal-actions">

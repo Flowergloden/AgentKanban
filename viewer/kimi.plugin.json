@@ -1,7 +1,7 @@
 {
   "$schema": "https://kimi.com/schemas/kimi.plugin.schema.json",
   "name": "kanban",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "kanban 工作流载体：向所有项目会话注入线程看板常驻约定，并提供看板可视化服务（本地 Web 服务随会话自动生灭）",
   "systemPromptPath": "./SYSTEM.md",
   "hooks": [

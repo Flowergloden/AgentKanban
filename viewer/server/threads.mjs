@@ -341,12 +341,14 @@ export async function setStatus(root, id, status) {
   return { fingerprint: fingerprint(updated) };
 }
 
+// 保留标记值：slug 留空且标题经 slugify 无产出时占位，表示"待命名"；调用方显式使用会被拒绝
+const RESERVED_SLUG = 'unnamed-pending';
+
 function slugify(title) {
-  const ascii = title
+  return title
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase();
-  return ascii || 'thread';
 }
 
 // 线程创建
@@ -355,7 +357,21 @@ export async function create(root, title, slug) {
     throw new ThreadError('bad-request', '标题是必填项');
   }
   title = title.trim();
-  const finalSlug = slug ? String(slug).trim() : slugify(title);
+  let finalSlug;
+  // 标记值占位（序号前缀已保证目录唯一）时豁免 slug 冲突检查
+  let exemptConflict = false;
+  if (slug && String(slug).trim()) {
+    finalSlug = String(slug).trim();
+    if (finalSlug === RESERVED_SLUG) {
+      throw new ThreadError('bad-request', `slug 为保留字，不可显式使用：${RESERVED_SLUG}`);
+    }
+  } else {
+    finalSlug = slugify(title);
+    if (!finalSlug) {
+      finalSlug = RESERVED_SLUG;
+      exemptConflict = true;
+    }
+  }
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(finalSlug)) {
     throw new ThreadError('bad-request', `slug 必须是 kebab-case：${finalSlug}`);
   }
@@ -366,7 +382,7 @@ export async function create(root, title, slug) {
     const m = entry.name.match(/^(\d{4})-(.+)$/);
     if (m) {
       maxNum = Math.max(maxNum, parseInt(m[1], 10));
-      if (m[2] === finalSlug) {
+      if (!exemptConflict && m[2] === finalSlug) {
         throw new ThreadError('conflict', `slug 已被占用：${finalSlug}（${entry.name}）`);
       }
     }
@@ -392,6 +408,45 @@ export async function create(root, title, slug) {
   }
   await fs.writeFile(path.join(dir, 'thread.md'), text, 'utf8');
   return { id };
+}
+
+// 线程重命名：目录更名为 `序号-新slug`，活跃线程同步更新 kanban/current
+export async function rename(root, id, newSlug) {
+  newSlug = typeof newSlug === 'string' ? newSlug.trim() : '';
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(newSlug)) {
+    throw new ThreadError('bad-request', `slug 必须是 kebab-case：${newSlug}`);
+  }
+  if (newSlug === RESERVED_SLUG) {
+    throw new ThreadError('bad-request', `slug 为保留字，不可使用：${RESERVED_SLUG}`);
+  }
+  const m = String(id).match(/^(\d{4})-(.+)$/);
+  if (!m) {
+    throw new ThreadError('bad-request', `非法线程标识：${id}`);
+  }
+  const dir = path.join(threadsDir(root), id);
+  const stat = await fs.stat(dir).catch(() => null);
+  if (!stat || !stat.isDirectory()) {
+    throw new ThreadError('thread-missing', `线程不存在：${id}`);
+  }
+  const newId = `${m[1]}-${newSlug}`;
+  if (newId === id) return { id }; // slug 未变化：幂等 no-op
+  // 冲突检查排除自身目录
+  const entries = await fs.readdir(threadsDir(root), { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === id) continue;
+    const em = entry.name.match(/^(\d{4})-(.+)$/);
+    if (em && em[2] === newSlug) {
+      throw new ThreadError('conflict', `slug 已被占用：${newSlug}（${entry.name}）`);
+    }
+  }
+  // 先改目录后写 current，保证 current 不会短暂指向缺失目录
+  await fs.rename(dir, path.join(threadsDir(root), newId));
+  const activeId = await readActiveId(root);
+  if (activeId === id) {
+    await ensureLayout(root);
+    await atomicWrite(path.join(kanbanDir(root), 'current'), newId);
+  }
+  return { id: newId };
 }
 
 // 线程删除（真删）

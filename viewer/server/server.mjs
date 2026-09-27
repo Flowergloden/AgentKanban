@@ -254,6 +254,13 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    const renameMatch = url.pathname.match(/^\/api\/threads\/([\w-]+)\/rename$/);
+    if (req.method === 'POST' && renameMatch) {
+      const body = await readJsonBody(req);
+      const result = await threads.rename(requireRoot(body.root), renameMatch[1], body.slug);
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === 'DELETE' && url.pathname === '/api/thread') {
       const body = await readJsonBody(req);
       const result = await threads.remove(requireRoot(body.root), requireId(body.id));

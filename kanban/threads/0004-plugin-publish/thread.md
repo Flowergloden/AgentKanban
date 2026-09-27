@@ -1,6 +1,6 @@
 # 插件分发
 
-status: 规划
+status: 实现
 
 <!-- 状态可选值：立项、规划、实现、完成。流转方式：直接修改上一行的 status 值。 -->
 
@@ -16,6 +16,7 @@ status: 规划
 - 2026-09-27：方案定稿。SYSTEM.md 守卫措辞、GitHub Action 步骤（版本一致性校验、zip 打包、gh release 上传）、两个 spec 的修订点均已明确；新增决策见 ## 决策（惰性初始化）。创建 OpenSpec change `add-plugin-distribution` 进入实施准备。
 - 2026-09-27：`add-plugin-distribution` 实施完成（12/12）。SYSTEM.md 随插件分发、ensure.mjs 改惰性初始化、仓库 AGENTS.md 删除、release.yml 流水线两次实跑成功（v0.2.0 / v0.2.1），本机安装源已从 local-path 切换为 zip-url。实测结论：zip-url 安装无更新提示、插件启用状态下不可覆盖安装（Windows 上运行中的看板服务锁住托管目录报 EBUSY），更新路径为"先结束服务进程再重装同一 latest URL"，已写入 v0.2.1 release notes。
 - 2026-09-27（蒸馏自 `add-plugin-distribution` 归档）：动机是 kanban 工作流无法离开本仓库（约定锁在项目 AGENTS.md、插件只是 local-path 快照）。关键决定：四条约定迁入插件 SYSTEM.md 经 systemPromptPath 全局条件式注入；SessionStart 自动初始化改为惰性补齐以免污染无关项目；GitHub Release 附件 zip + tag 触发 Action 做分发；仓库 AGENTS.md 整体移除保持单一事实来源。完成情况：12/12 任务完成，v0.2.0/v0.2.1 两个版本经流水线发布，本机已切换 zip-url 安装并实测更新路径。
+- 2026-09-27：探索"免杀进程更新"解法并完成根因定位。官方文档确认插件 hook 以插件根目录为 cwd 运行；ensure.mjs spawn 未传 cwd，常驻服务进程继承托管目录为工作目录，Windows 下该目录因此被钉死，覆盖安装必报 EBUSY——杀进程只是治标。选定根治方案：spawn 显式指定 cwd 到插件目录外 + /api/health 携带版本 + 新增 /api/shutdown 端点 + ensure.mjs 版本比对自动换代，预估约 30 行改动、零新依赖。另发现官方插件 kimi-cu-win 以同样方式中招，本修法可作范本。
 
 ## 决策
 
@@ -34,6 +35,8 @@ status: 规划
   **原因**：插件全局常驻后，自动初始化的副作用从单项目放大到所有项目，会在无关仓库中创建 `kanban/` 目录造成污染；写路径与页面加载本就有"结构缺失时自动补齐"的 spec 行为，改为惰性后体验无损。
 - **决定**：插件更新路径定为"先结束看板服务进程（或等其随会话退出），再重装恒定的 latest URL"，不做自动更新也不依赖管理器提示。
   **原因**：实测 zip-url 安装在插件管理器中无更新提示，且插件启用状态下覆盖安装被 Windows 文件锁拒绝（运行中的看板服务锁住托管目录，EBUSY）；恒定 URL + 杀进程重装的步骤简单可靠，已写入 release notes。
+- **决定**：更新路径改为"免杀进程"（取代上一条）：服务进程 spawn 时显式指定 cwd 到插件托管目录外，根治 Windows 目录锁；配套版本换代机制——/api/health 携带版本、server 新增 /api/shutdown 端点、ensure.mjs 发现运行中服务版本不一致时先 shutdown 再拉起新版。
+  **原因**：锁的根因是 hook 以插件根目录为 cwd 运行（官方行为）且 spawn 继承了它，杀进程只是治标且用户无好用手段；cwd 外置一行即可根治，版本换代解决重装后旧代码被新心跳续命常驻的问题，用户更新零额外操作。
 
 ## Changes
 
@@ -42,3 +45,4 @@ status: 规划
 -->
 
 - add-plugin-distribution
+- fix-plugin-update-lock

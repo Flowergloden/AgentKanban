@@ -15,7 +15,15 @@ const TTL_CHECK_INTERVAL_MS = 30_000;
 const kimiCodeHome = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code');
 const registryDir = path.join(kimiCodeHome, 'kanban-viewer');
 const registryFile = path.join(registryDir, 'registry.json');
-const webDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
+const serverDir = path.dirname(fileURLToPath(import.meta.url));
+const webDir = path.join(serverDir, '..', 'web');
+
+let version = 'unknown';
+try {
+  const manifest = JSON.parse(await fs.readFile(path.join(serverDir, '..', 'kimi.plugin.json'), 'utf8'));
+  if (typeof manifest?.version === 'string' && manifest.version) version = manifest.version;
+} catch {
+}
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -159,7 +167,13 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${HOST}:${PORT}`);
 
     if (req.method === 'GET' && url.pathname === '/api/health') {
-      return sendJson(res, 200, { ok: true, name: SERVICE_NAME });
+      return sendJson(res, 200, { ok: true, name: SERVICE_NAME, version });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/shutdown') {
+      sendJson(res, 200, { ok: true });
+      setImmediate(() => process.exit(0));
+      return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/register') {

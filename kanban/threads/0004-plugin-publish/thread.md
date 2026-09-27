@@ -14,6 +14,8 @@ status: 规划
 
 - 2026-09-27：完成分发方式规划。盘点出工作流的三层组成（L1 约定层 / L2 数据层 / L3 工具层），确认 L2 已被插件初始化接口覆盖；确定目标架构：插件经 `systemPromptPath` 承载四条约定，经 GitHub Release 附件 zip + GitHub Action 自动发布。后续待办：改写 SYSTEM.md（全局条件式措辞）、移除本仓库 AGENTS.md 的 kanban 约定、编写发布 Action、修订 kanban-threads 与 kanban-viewer spec、验证 zip-url 安装的更新检测行为。
 - 2026-09-27：方案定稿。SYSTEM.md 守卫措辞、GitHub Action 步骤（版本一致性校验、zip 打包、gh release 上传）、两个 spec 的修订点均已明确；新增决策见 ## 决策（惰性初始化）。创建 OpenSpec change `add-plugin-distribution` 进入实施准备。
+- 2026-09-27：`add-plugin-distribution` 实施完成（12/12）。SYSTEM.md 随插件分发、ensure.mjs 改惰性初始化、仓库 AGENTS.md 删除、release.yml 流水线两次实跑成功（v0.2.0 / v0.2.1），本机安装源已从 local-path 切换为 zip-url。实测结论：zip-url 安装无更新提示、插件启用状态下不可覆盖安装（Windows 上运行中的看板服务锁住托管目录报 EBUSY），更新路径为"先结束服务进程再重装同一 latest URL"，已写入 v0.2.1 release notes。
+- 2026-09-27（蒸馏自 `add-plugin-distribution` 归档）：动机是 kanban 工作流无法离开本仓库（约定锁在项目 AGENTS.md、插件只是 local-path 快照）。关键决定：四条约定迁入插件 SYSTEM.md 经 systemPromptPath 全局条件式注入；SessionStart 自动初始化改为惰性补齐以免污染无关项目；GitHub Release 附件 zip + tag 触发 Action 做分发；仓库 AGENTS.md 整体移除保持单一事实来源。完成情况：12/12 任务完成，v0.2.0/v0.2.1 两个版本经流水线发布，本机已切换 zip-url 安装并实测更新路径。
 
 ## 决策
 
@@ -30,6 +32,8 @@ status: 规划
   **原因**：保持单一事实来源（插件 SYSTEM.md），避免两处文本漂移；本仓库的使用场景均以装了插件的 kimi-code 为前提。
 - **决定**：取消 SessionStart hook 对会话所在项目的自动初始化，改为惰性补齐：`kanban/` 结构仅在写操作（创建线程、设活跃等）或看板页面加载项目时自动补齐。
   **原因**：插件全局常驻后，自动初始化的副作用从单项目放大到所有项目，会在无关仓库中创建 `kanban/` 目录造成污染；写路径与页面加载本就有"结构缺失时自动补齐"的 spec 行为，改为惰性后体验无损。
+- **决定**：插件更新路径定为"先结束看板服务进程（或等其随会话退出），再重装恒定的 latest URL"，不做自动更新也不依赖管理器提示。
+  **原因**：实测 zip-url 安装在插件管理器中无更新提示，且插件启用状态下覆盖安装被 Windows 文件锁拒绝（运行中的看板服务锁住托管目录，EBUSY）；恒定 URL + 杀进程重装的步骤简单可靠，已写入 release notes。
 
 ## Changes
 

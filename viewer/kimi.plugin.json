@@ -1,8 +1,9 @@
 {
   "$schema": "https://kimi.com/schemas/kimi.plugin.schema.json",
   "name": "kanban",
-  "version": "0.1.0",
-  "description": "看板可视化：随 kimi-code 会话自动生灭的本地 Web 服务，展示当前项目 active thread 的 thread.md 原文",
+  "version": "0.2.0",
+  "description": "kanban 工作流载体：向所有项目会话注入线程看板常驻约定，并提供看板可视化服务（本地 Web 服务随会话自动生灭）",
+  "systemPromptPath": "./SYSTEM.md",
   "hooks": [
     {
       "event": "SessionStart",

@@ -1,0 +1,40 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验 tag 版本与 manifest 一致
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION=$(grep -o '"version"[^,}]*' viewer/kimi.plugin.json | cut -d'"' -f4)
+          echo "tag=$TAG_VERSION manifest=$MANIFEST_VERSION"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::tag 版本 $TAG_VERSION 与 viewer/kimi.plugin.json 的 version $MANIFEST_VERSION 不一致"
+            exit 1
+          fi
+
+      - name: 打包 kanban-plugin.zip
+        run: |
+          cd viewer
+          zip -r ../kanban-plugin.zip . -x '.*'
+
+      - name: 上传 Release 附件
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            kanban-plugin.zip \
+            || gh release upload "$GITHUB_REF_NAME" kanban-plugin.zip --clobber

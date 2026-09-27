@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 const HEALTH_URL = 'http://127.0.0.1:4731/api/health';
 const REGISTER_URL = 'http://127.0.0.1:4731/api/register';
-const INIT_URL = 'http://127.0.0.1:4731/api/init';
 const serverFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'server.mjs');
 
 async function readStdin() {
@@ -48,16 +47,6 @@ try {
       body: JSON.stringify({ root: cwd }),
       signal: AbortSignal.timeout(2000),
     });
-    // 初始化失败不阻塞会话启动（页面加载时还会兜底触发）
-    try {
-      await fetch(INIT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ root: cwd }),
-        signal: AbortSignal.timeout(2000),
-      });
-    } catch {
-    }
   }
 } catch (err) {
   process.stderr.write(`kanban-viewer: ${err?.message || err}\n`);

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-为一个或多个项目的看板（`kanban/`）提供当前 active thread 的可视化页面：本地 Web 服务随 kimi-code 会话自动生灭，前端展示 `thread.md` 原文，用户无需手动维护任何后台进程或终端窗口。
+作为 kanban 工作流的载体：向所有项目会话注入线程看板常驻约定（`systemPromptPath`），并为一个或多个项目的看板（`kanban/`）提供当前 active thread 的可视化页面——本地 Web 服务随 kimi-code 会话自动生灭，前端展示 `thread.md` 原文，用户无需手动维护任何后台进程或终端窗口。
 
 ## Requirements
 

@@ -19,6 +19,7 @@ status: 完成
 - 2026-09-27：探索"免杀进程更新"解法并完成根因定位。官方文档确认插件 hook 以插件根目录为 cwd 运行；ensure.mjs spawn 未传 cwd，常驻服务进程继承托管目录为工作目录，Windows 下该目录因此被钉死，覆盖安装必报 EBUSY——杀进程只是治标。选定根治方案：spawn 显式指定 cwd 到插件目录外 + /api/health 携带版本 + 新增 /api/shutdown 端点 + ensure.mjs 版本比对自动换代，预估约 30 行改动、零新依赖。另发现官方插件 kimi-cu-win 以同样方式中招，本修法可作范本。
 - 2026-09-27：`fix-plugin-update-lock` 实施完成（7/7）并发布 v0.2.2。实测：服务运行中 rm -rf 托管目录并重装无 EBUSY（两次）；版本换代链路 0.2.2 → 0.2.3-dev → 0.2.2 全程单进程无报错；旧版（无 shutdown 端点）在线时新 ensure 静默退化复用；看板页面与接口正常。release notes 已改写为"直接重装 latest URL，无需杀进程"（注明从 0.2.1 升级是最后一次需手动杀进程）。
 - 2026-09-27（蒸馏自 `fix-plugin-update-lock` 归档）：动机是插件覆盖安装必报 Windows EBUSY——服务进程继承插件根目录为 cwd 钉死托管目录，"先杀进程再重装"用户无好用手段。关键决定：spawn 显式 `cwd: os.tmpdir()` 一行根治目录锁；版本即换代信号（health 携带 manifest 版本，复用 release.yml 版本一致性校验保证每次发布版本必变）；换代协议只放 ensure.mjs（shutdown 请求 + 3 秒轮询 + 拉起新版），心跳路径不动；shutdown 端点语义最小化（先 200 再退出，无鉴权，与 TTL 机制并存）；旧版无 shutdown 能力时退化复用。完成情况：7/7 任务完成，v0.2.2 经流水线发布并实测免杀覆盖安装与自动换代，本机托管插件已升至 v0.2.2。
+- 2026-09-28（蒸馏自 `add-codex-distribution` 归档）：动机是原看板插件只面向 Kimi，Codex 用户无法独立使用同一工作流，且服务生命周期需要适配活动驱动与可选常驻。关键决定：Kimi/Codex 共用一套 viewer 业务核心、线程格式和约定正文，仅保留薄宿主适配；默认 auto 按有效会话/页面活动续期（180 秒无活动退出），用户可显式选择 persistent；以共享锁、协议协商和非破坏性注册表导入保障双宿主共存与升级；发布按宿主白名单打包并校验 tag、两份 manifest 与 service 元数据版本一致。完成情况：23/23 项完成（7.2–7.4 用户验收），47 项自动化测试通过，v0.2.4 双包校验通过，提交 d1866e6 已推送并打 tag；GitHub Release workflow 尚未核验。
 
 ## 决策
 
@@ -48,3 +49,4 @@ status: 完成
 
 - add-plugin-distribution
 - fix-plugin-update-lock
+- add-codex-distribution

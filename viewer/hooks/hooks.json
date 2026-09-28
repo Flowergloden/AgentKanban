@@ -1,0 +1,42 @@
+{
+  "description": "kanban 本地服务与会话约定",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/server/codex-hook.mjs\" start",
+            "timeout": 15,
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/server/codex-hook.mjs\" activity",
+            "timeout": 12,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/server/codex-hook.mjs\" activity",
+            "timeout": 12,
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

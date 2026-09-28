@@ -14,20 +14,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 校验 tag 版本与 manifest 一致
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          MANIFEST_VERSION=$(grep -o '"version"[^,}]*' viewer/kimi.plugin.json | cut -d'"' -f4)
-          echo "tag=$TAG_VERSION manifest=$MANIFEST_VERSION"
-          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
-            echo "::error::tag 版本 $TAG_VERSION 与 viewer/kimi.plugin.json 的 version $MANIFEST_VERSION 不一致"
-            exit 1
-          fi
+      - name: 校验三个版本并白名单暂存双宿主文件
+        run: node scripts/release.mjs stage "$GITHUB_REF_NAME" "$RUNNER_TEMP/agent-kanban-stage"
 
-      - name: 打包 kanban-plugin.zip
+      - name: 构建双宿主 ZIP（保留隐藏清单）
         run: |
-          cd viewer
-          zip -r ../kanban-plugin.zip . -x '.*'
+          (cd "$RUNNER_TEMP/agent-kanban-stage/kimi" && zip -q -r "$GITHUB_WORKSPACE/kanban-plugin.zip" .)
+          (cd "$RUNNER_TEMP/agent-kanban-stage/codex" && zip -q -r "$GITHUB_WORKSPACE/kanban-codex-plugin.zip" .)
+
+      - name: 上传前解包并校验完整性
+        run: |
+          mkdir -p "$RUNNER_TEMP/agent-kanban-unpacked/kimi" "$RUNNER_TEMP/agent-kanban-unpacked/codex"
+          unzip -q kanban-plugin.zip -d "$RUNNER_TEMP/agent-kanban-unpacked/kimi"
+          unzip -q kanban-codex-plugin.zip -d "$RUNNER_TEMP/agent-kanban-unpacked/codex"
+          node scripts/release.mjs verify "$GITHUB_REF_NAME" "$RUNNER_TEMP/agent-kanban-unpacked"
 
       - name: 上传 Release 附件
         env:
@@ -36,5 +36,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
-            kanban-plugin.zip \
-            || gh release upload "$GITHUB_REF_NAME" kanban-plugin.zip --clobber
+            kanban-plugin.zip kanban-codex-plugin.zip \
+            || gh release upload "$GITHUB_REF_NAME" kanban-plugin.zip kanban-codex-plugin.zip --clobber

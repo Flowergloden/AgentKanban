@@ -4,26 +4,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as threads from './threads.mjs';
+import { loadServiceMetadata } from './metadata.mjs';
+import { registryPaths, loadRegistry, saveRegistry, normalizeRoot } from './registry.mjs';
+import { createLifecycle, CHECK_INTERVAL_MS } from './lifecycle.mjs';
+import { acquireLock, ownsLock } from './lock.mjs';
 
 const HOST = '127.0.0.1';
-const PORT = 4731;
+const PORT = process.env.AGENT_KANBAN_PORT ? Number(process.env.AGENT_KANBAN_PORT) : 4731;
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('invalid AGENT_KANBAN_PORT');
 const SERVICE_NAME = 'kanban-viewer';
 const MAX_BODY_BYTES = 64 * 1024;
-const HEARTBEAT_TTL_MS = 180_000;
-const TTL_CHECK_INTERVAL_MS = 30_000;
 
-const kimiCodeHome = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code');
-const registryDir = path.join(kimiCodeHome, 'kanban-viewer');
-const registryFile = path.join(registryDir, 'registry.json');
+const { registryFile } = registryPaths();
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.join(serverDir, '..', 'web');
 
-let version = 'unknown';
-try {
-  const manifest = JSON.parse(await fs.readFile(path.join(serverDir, '..', 'kimi.plugin.json'), 'utf8'));
-  if (typeof manifest?.version === 'string' && manifest.version) version = manifest.version;
-} catch {
-}
+const { version, protocolVersion } = await loadServiceMetadata();
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -36,40 +32,11 @@ const CONTENT_TYPES = {
   '.ico': 'image/x-icon',
 };
 
-const projects = new Map();
-let lastHeartbeatAt = Date.now();
-
-// Windows 上不同写入方会以 "\" 或 "/" 形式传同一 cwd，统一为 "/" 形式以便合并
-function normalizeRoot(root) {
-  return root.replace(/\\/g, '/');
-}
-
-async function loadRegistry() {
-  try {
-    const data = JSON.parse(await fs.readFile(registryFile, 'utf8'));
-    let dirty = false;
-    for (const [root, lastSeen] of Object.entries(data?.projects ?? {})) {
-      if (typeof root !== 'string' || !root || !Number.isFinite(lastSeen)) continue;
-      const normalized = normalizeRoot(root);
-      if (normalized !== root) dirty = true;
-      const existing = projects.get(normalized);
-      if (existing === undefined || lastSeen > existing) {
-        projects.set(normalized, lastSeen);
-      }
-    }
-    if (dirty) await saveRegistry();
-  } catch {
-  }
-}
-
-async function saveRegistry() {
-  await fs.mkdir(registryDir, { recursive: true });
-  const tmpFile = registryFile + '.tmp';
-  await fs.writeFile(tmpFile, JSON.stringify({ projects: Object.fromEntries(projects) }, null, 2));
-  await fs.rename(tmpFile, registryFile);
-}
+const projects = await loadRegistry();
+const lifecycle = createLifecycle({ initialMode: process.env.AGENT_KANBAN_INITIAL_MODE || 'auto' });
 
 function sendJson(res, status, data) {
+  if (status >= 200 && status < 300 && res.kanbanBusiness) lifecycle.activity();
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
 }
@@ -164,15 +131,42 @@ async function serveStatic(req, res, pathname) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    const url = new URL(req.url, `http://${HOST}:${PORT}`);
+    const url = new URL(req.url, 'http://' + HOST + ':' + PORT);
+    res.kanbanBusiness = url.pathname.startsWith('/api/') &&
+      !['/api/health', '/api/service/status', '/api/service/mode', '/api/shutdown', '/api/register', '/api/heartbeat', '/api/activity'].includes(url.pathname);
 
     if (req.method === 'GET' && url.pathname === '/api/health') {
-      return sendJson(res, 200, { ok: true, name: SERVICE_NAME, version });
+      return sendJson(res, 200, { ok: true, name: SERVICE_NAME, version, protocolVersion, mode: lifecycle.mode, pid: process.pid, cwd: process.cwd() });
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/service/status') {
+      return sendJson(res, 200, { ok: true, mode: lifecycle.mode, version, protocolVersion });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/service/mode') {
+      const origin = req.headers.origin;
+      if (origin && origin !== `http://${HOST}:${PORT}`)
+        return sendJson(res, 403, { error: 'cross-origin mode control rejected' });
+      if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || ''))
+        return sendJson(res, 415, { error: 'JSON content type required' });
+      const body = await readJsonBody(req);
+      if (!body || typeof body !== 'object' || Array.isArray(body) ||
+          !['auto', 'persistent'].includes(body.mode))
+        return sendJson(res, 400, { error: 'invalid mode' });
+      let release;
+      try { release = await acquireLock({ waitMs: 0 }); }
+      catch (error) { if (error.code === 'busy') return sendJson(res, 409, { error: '升级或控制进行中，请重试' }); throw error; }
+      try { return sendJson(res, 200, { ok: true, mode: lifecycle.setMode(body.mode) }); }
+      finally { await release(); }
+    }
     if (req.method === 'POST' && url.pathname === '/api/shutdown') {
+      let release;
+      if (!await ownsLock(req.headers['x-kanban-lock'])) {
+        try { release = await acquireLock({ waitMs: 0 }); }
+        catch (error) { if (error.code === 'busy') return sendJson(res, 409, { error: '升级或控制进行中，请重试' }); throw error; }
+      }
       sendJson(res, 200, { ok: true });
-      setImmediate(() => process.exit(0));
+      setImmediate(async () => { if (release) await release(); process.exit(0); });
       return;
     }
 
@@ -180,20 +174,24 @@ const server = http.createServer(async (req, res) => {
       const { root } = await readJsonBody(req);
       if (typeof root !== 'string' || !root) return sendJson(res, 400, { error: 'root is required' });
       projects.set(normalizeRoot(root), Date.now());
-      await saveRegistry();
+      await saveRegistry(registryFile, projects);
+      lifecycle.activity();
       return sendJson(res, 200, { ok: true });
     }
 
-    if (req.method === 'POST' && url.pathname === '/api/heartbeat') {
-      const { root } = await readJsonBody(req);
-      lastHeartbeatAt = Date.now();
-      if (typeof root === 'string' && root) {
-        projects.set(normalizeRoot(root), lastHeartbeatAt);
-        await saveRegistry();
+    if (req.method === 'POST' && ['/api/heartbeat', '/api/activity'].includes(url.pathname)) {
+      const body = await readJsonBody(req);
+      if (body === null || typeof body !== 'object' || Array.isArray(body) ||
+          (body.root !== undefined && (typeof body.root !== 'string' || !body.root)))
+        return sendJson(res, 400, { error: 'invalid activity' });
+      const now = Date.now();
+      if (body.root) {
+        projects.set(normalizeRoot(body.root), now);
+        await saveRegistry(registryFile, projects);
       }
+      lifecycle.activity();
       return sendJson(res, 200, { ok: true });
     }
-
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const list = [...projects.entries()]
         .map(([root, lastSeen]) => ({ root, lastSeen }))
@@ -286,11 +284,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.on('error', () => process.exit(1));
+server.on('error', (error) => { process.stderr.write('kanban-viewer: ' + error.message + '\n'); process.exit(1); });
 
 setInterval(() => {
-  if (Date.now() - lastHeartbeatAt > HEARTBEAT_TTL_MS) process.exit(0);
-}, TTL_CHECK_INTERVAL_MS).unref();
+  if (lifecycle.expired()) process.exit(0);
+}, CHECK_INTERVAL_MS).unref();
 
-await loadRegistry();
 server.listen(PORT, HOST);

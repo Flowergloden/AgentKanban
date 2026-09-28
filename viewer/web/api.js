@@ -26,6 +26,10 @@ const q = (root) => `?root=${encodeURIComponent(root)}`;
 
 export const api = {
   listProjects: () => request('/api/projects'),
+  health: () => request('/api/health'),
+  activity: (root) => request('/api/activity', jsonOptions('POST', root ? { root } : {})),
+  setMode: (mode) => request('/api/service/mode', jsonOptions('POST', { mode })),
+  stop: () => request('/api/shutdown', { method: 'POST' }),
   init: (root) => request('/api/init', jsonOptions('POST', { root })),
   listThreads: (root) => request(`/api/threads${q(root)}`),
   getThread: (root, id) => request(`/api/thread${q(root)}&id=${encodeURIComponent(id)}`),

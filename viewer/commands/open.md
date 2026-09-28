@@ -1,20 +1,11 @@
 ---
-description: 在系统默认浏览器中打开当前项目的看板页面
+description: 在系统默认浏览器中打开当前项目的线程看板
 ---
 
-请按以下步骤打开当前项目的看板页面：
+以当前会话工作目录的绝对路径为项目根。由本命令文件所在 `commands/` 目录定位 `../server/open.mjs`，执行：
 
-1. 用当前会话工作目录的绝对路径作为项目根（下称 `<root>`），先确认看板服务在运行：请求 `http://127.0.0.1:4731/api/health`，应返回 `{"ok":true,"name":"kanban-viewer"}`。
-2. 若服务未运行，先拉起（Git Bash 下执行，插件安装在用户目录的 managed copy）：
-
-```bash
-echo "{\"cwd\":\"<root>\"}" | node ~/.kimi-code/plugins/managed/kanban/server/ensure.mjs
+```powershell
+node "<本命令目录>/../server/open.mjs" "<项目根绝对路径>"
 ```
 
-3. 用系统默认浏览器打开看板 URL（`<root>` 必须先做 URL 编码，Windows 路径含反斜杠与冒号）：
-
-```bash
-cmd /c start "" "http://127.0.0.1:4731/?root=<URL编码后的root>"
-```
-
-打开后页面应显示当前项目 active thread 的 `thread.md` 原文。若浏览器显示服务不可达或提示异常，告知用户检查端口 4731 是否被其他程序占用。
+脚本会先确保服务就绪，再以 URL 编码项目根打开浏览器；普通打开不取消常驻。失败时报告 stderr，不得声称打开成功。不要依赖 Kimi 托管安装绝对路径。

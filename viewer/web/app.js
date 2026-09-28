@@ -1,5 +1,7 @@
 import { html, render, useState, useEffect } from './vendor/preact-standalone.module.js';
 import { api } from './api.js';
+import { watchVisibleActivity } from './visibility.js';
+import { changeServiceMode, stopServiceWithConfirmation } from './service-controls.js';
 import { ThreadTable, UnfinishedView } from './views-table.js';
 import { BoardView } from './views-board.js';
 import { ThreadDetail } from './detail.js';
@@ -22,6 +24,9 @@ function App() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [mode, setMode] = useState(null);
+  const [serviceNotice, setServiceNotice] = useState('');
+  const [busy, setBusy] = useState(false);
 
   // 初始化：?root= 仅读取一次；无参数落到 lastSeen 最近项目（行为同现版）
   useEffect(() => {
@@ -39,11 +44,31 @@ function App() {
       const current = paramRoot || roots[0] || '';
       setRoot(current);
       if (!current) {
-        setError('注册表为空：尚未有项目注册，请先在某个项目中启动 kimi-code 会话。');
+        setError('注册表为空：尚未有项目注册，请通过 Kimi 或 Codex 在项目中启动看板服务。');
       }
     })();
   }, []);
 
+  useEffect(() => {
+    api.health().then((health) => setMode(health.mode)).catch(() => setServiceNotice('服务已失联；请从本地打开入口重新启动，网页无法自行拉起进程。'));
+  }, []);
+
+  useEffect(() => watchVisibleActivity({
+    document, window,
+    send: () => api.activity(root),
+    onLost: () => setServiceNotice('服务已失联；请从本地打开入口重新启动，网页无法自行拉起进程。'),
+    onRestored: () => { setServiceNotice(''); api.health().then((health) => setMode(health.mode)).catch(() => {}); },
+    setInterval, clearInterval,
+  }), [root]);
+
+  const changeMode = (next) => changeServiceMode(next, {
+    setBusy, setMode, setNotice: setServiceNotice, setModeApi: api.setMode,
+  });
+
+  const stopService = () => stopServiceWithConfirmation({
+    confirm: (message) => window.confirm(message), stop: api.stop,
+    setBusy, setMode, setNotice: setServiceNotice,
+  });
   const refresh = async (r = root) => {
     if (!r) return;
     try {
@@ -82,6 +107,9 @@ function App() {
           ${projects.map((p) => html`<option key=${p} value=${p}>${p}</option>`)}
         </select>
       `}
+      <span class="service-mode">共享服务：${mode === 'persistent' ? '常驻' : mode === 'auto' ? '自动' : '未连接'}（影响所有项目）</span>
+      <button disabled=${busy || !mode} onClick=${() => changeMode(mode === 'persistent' ? 'auto' : 'persistent')}>${mode === 'persistent' ? '取消常驻' : '常驻'}</button>
+      <button class="danger" disabled=${busy || !mode} onClick=${stopService}>停止服务</button>
       <div class="tabs">
         ${VIEWS.map((v) => html`
           <button
@@ -96,6 +124,7 @@ function App() {
       <button onClick=${() => refresh()} disabled=${!root}>刷新</button>
     </header>
     <main>
+      ${serviceNotice && html`<div class="banner-409">${serviceNotice}</div>`}
       ${notice && html`<div class="hint">${notice}</div>`}
       ${error && html`<div class="empty">${error}</div>`}
       ${!error && root && threads === null && html`<div class="empty">加载中…</div>`}

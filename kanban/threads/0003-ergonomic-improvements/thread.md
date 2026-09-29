@@ -18,6 +18,8 @@ status: 实现
 - **2026-09-27** — Web 创建线程对话框新增「目标（选填）」字段：服务端 `create()` 接受可选 `goal`（trim 后用 `replaceSection` 写入卷宗「目标」小节、替换模板填写说明；非字符串或超 5000 字符返回 400 且不建目录，加工失败清理已建目录），路由透传 `body.goal`，前端模态框在标题与 slug 之间插入多行目标文本域。主 spec `kanban-viewer` 创建接口与页面入口两条 Requirement 各补目标描述语义与 Scenario（直接编辑主 spec，未走 change），`openspec validate` 通过。顺带还清了一笔部署欠账：插件副本（0.2.2）自 `add-deferred-thread-naming` 后未同步，本次整目录同步并把 `kimi.plugin.json` 升到 0.2.4，`ensure.mjs` 完成换代。已实测：带/不带目标创建、超长与非字符串 400、中文标题仍走 `unnamed-pending`、浏览器渲染三字段正常。
 - **2026-09-27** — OpenSpec change `add-deferred-thread-naming` 完成并归档。动机：slugify 只支持英文标题，中文标题一律 fallback 为 `thread` 且第二个即冲突。关键决定：延迟命名——创建时以保留标记值 `unnamed-pending` 占位（豁免 slug 冲突检查），命名延迟到会话校准由 Agent（即 LLM）自动完成，零配置零依赖；新增重命名接口 `POST /api/threads/:id/rename`（kebab-case 校验、保留字拒绝、冲突检查排除自身、活跃线程同步 `kanban/current`）；命名并入约定一而非新增约定五。完成情况：10/10 任务完成，delta spec 已同步进主 spec `kanban-viewer`/`kanban-threads`，归档于 `openspec/changes/archive/2026-09-27-add-deferred-thread-naming/`。
 
+- **2026-09-29** — 修复 UTF-8 BOM 卷宗/模板兼容：解析时仅忽略开头 BOM，模板创建时保留 BOM 替换标题；带 BOM 的创建、列表、详情及编辑回归测试通过（全套 48 项通过），并用 VibeRPG 三份原始卷宗验证标题可识别且无解析错误。随修复发布 v0.2.5。
+
 ## 决策
 
 <!-- 每条决策 MUST 同时包含"决定了什么"与"为什么"，格式：
@@ -29,6 +31,9 @@ status: 实现
   **原因**：线程层本质是跨会话笼统目标的容器，强制走 OpenSpec 让小事重流程，违背看板"纯文件、随手记"的定位；需求是否需要 proposal/design/tasks 级别的正式度，应由用户按事情大小自行权衡。
 - **2026-09-27** — **决定**：线程 slug 采用"延迟命名"方案：创建时 slug 留空且标题经 slugify 无产出（非英文标题）时，以保留标记值 `unnamed-pending` 占位（跳过 slug 冲突检查，序号前缀天然区分多线程共存）；会话校准（约定一）发现活跃线程 slug 精确命中标记时，Agent 自动据卷宗标题（必要时参考目标小节）生成英文 kebab-case slug，经新增的重命名接口改名并同步 `kanban/current`——不询问用户、仅命名当前活跃线程；`unnamed-pending` 为保留字，手动传入或作为重命名目标均拒绝。
   **原因**：现有 slugify 只支持英文标题，中文标题一律 fallback 为 `thread` 且第二个即冲突；服务端直连 LLM 须给零配置本地服务引入凭据配置，而 Agent 本身就是 LLM——把命名从创建时刻延迟到校准时刻，零配置零依赖地复用约定一的既有触发点。
+
+- **2026-09-29** — **决定**：看板在解析卷宗、读取模板时兼容开头 UTF-8 BOM，保留源文件及新建卷宗的 BOM。
+  **原因**：VibeRPG 的 P4 版本管理强制文本文件采用 UTF-8 with BOM，直接剥除文件 BOM 会违反项目编码约束。
 
 ## Changes
 

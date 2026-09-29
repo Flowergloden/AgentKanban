@@ -51,7 +51,7 @@ test('coordinated upgrade preserves persistent mode and registry', async (t) => 
   assert.equal((await fetch(scope.base + '/api/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ root }) })).status, 200);
   const oldPid = (await (await fetch(scope.base + '/api/health')).json()).pid;
   const upgraded = await scope.run('start');
-  assert.equal(upgraded.version, '0.2.4');
+  assert.equal(upgraded.version, '0.2.5');
   assert.equal(upgraded.mode, 'persistent');
   assert.notEqual(upgraded.pid, oldPid);
   assert.equal((await (await fetch(scope.base + '/api/projects')).json()).length, 1);

@@ -112,7 +112,8 @@ async function readActiveId(root) {
 // 小节 body 为"净内容"：裁掉模板排版产生的内容首尾结构性空行
 export function parseThread(text) {
   const errors = [];
-  const lines = text.split(/\r?\n/);
+  // Ignore the leading BOM while parsing; writes and fingerprints still use the original text.
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   let title = '';
   let status = '';
   const sections = [];
@@ -410,7 +411,8 @@ export async function create(root, title, slug, goal) {
   } catch {
     // 模板文件不可读（理论上 ensureLayout 已补齐）时以内置默认模板兜底
   }
-  const text = template.replace(/^# .*$/m, `# ${title}`);
+  // Preserve a template's UTF-8 BOM when replacing its title.
+  const text = template.replace(/^(\uFEFF?)# .*$/m, (_, bom) => `${bom}# ${title}`);
   if (text === template) {
     await fs.rmdir(dir);
     throw new ThreadError('bad-request', '卷宗模板缺少标题行');

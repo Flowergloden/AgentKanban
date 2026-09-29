@@ -69,20 +69,25 @@ export async function ensure({ root, persistent = false } = {}) {
   try {
     service = checkService(await probe());
     if (!service) service = await launch(persistent ? 'persistent' : 'auto');
-    else if (service.protocolVersion === undefined) {
-      legacy = true;
-      if (persistent) throw new Error('旧协议不支持常驻；请先停止旧服务并升级双端');
-    } else if (service.protocolVersion !== metadata.protocolVersion) {
-      throw new Error('服务协议不兼容；请停止旧服务并升级双端');
-    } else if (compareVersions(metadata.version, service.version) > 0) {
-      const inherited = service.mode === 'persistent' ? 'persistent' : 'auto';
-      const response = await request('/api/shutdown', { method: 'POST', headers: { 'X-Kanban-Lock': release.token } });
-      if (response.status !== 200 || response.data?.ok !== true ||
-          !await waitFor((result) => result === null, 3000))
-        throw new Error('旧服务未正常退出，升级已中止');
-      service = await launch(inherited);
-      if (service.version !== metadata.version || service.mode !== inherited)
-        throw new Error('新版服务未确认升级或模式继承');
+    else {
+      if (service.protocolVersion === undefined) {
+        if (compareVersions(metadata.version, service.version) <= 0) {
+          legacy = true;
+          if (persistent) throw new Error('旧协议不支持常驻；请先停止旧服务并升级双端');
+        }
+      } else if (service.protocolVersion !== metadata.protocolVersion) {
+        throw new Error('服务协议不兼容；请停止旧服务并升级双端');
+      }
+      if (!legacy && compareVersions(metadata.version, service.version) > 0) {
+        const inherited = service.mode === 'persistent' ? 'persistent' : 'auto';
+        const response = await request('/api/shutdown', { method: 'POST', headers: { 'X-Kanban-Lock': release.token } });
+        if (response.status !== 200 || response.data?.ok !== true ||
+            !await waitFor((result) => result === null, 3000))
+          throw new Error('旧服务未正常退出，升级已中止');
+        service = await launch(inherited);
+        if (service.version !== metadata.version || service.mode !== inherited)
+          throw new Error('新版服务未确认升级或模式继承');
+      }
     }
     if (root) {
       const result = await request('/api/register', {

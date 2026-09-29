@@ -39,7 +39,7 @@ test('packaged Kimi and Codex adapters reuse one process and preserve registry o
   await mkdir(path.dirname(legacyFile), { recursive: true });
   const legacy = JSON.stringify({ projects: { 'C:\\legacy\\project': 123 } });
   await writeFile(legacyFile, legacy);
-  await stageRelease(viewer, stage, 'v0.2.5');
+  await stageRelease(viewer, stage, 'v0.2.6');
   const kimi = path.join(stage, 'kimi', 'server');
   const codex = path.join(stage, 'codex', 'server');
   const rootA = path.join(dir, 'project A');
@@ -53,7 +53,7 @@ test('packaged Kimi and Codex adapters reuse one process and preserve registry o
   assert.equal(JSON.parse(b.stdout).hookSpecificOutput.hookEventName, 'SessionStart');
   const first = await (await fetch(base + '/api/health')).json();
   assert.equal(first.mode, 'auto');
-  assert.equal(first.version, '0.2.5');
+  assert.equal(first.version, '0.2.6');
   const projects = await (await fetch(base + '/api/projects')).json();
   assert.equal(projects.length, 3);
   assert.equal(await readFile(legacyFile, 'utf8'), legacy);

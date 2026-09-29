@@ -51,11 +51,29 @@ test('coordinated upgrade preserves persistent mode and registry', async (t) => 
   assert.equal((await fetch(scope.base + '/api/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ root }) })).status, 200);
   const oldPid = (await (await fetch(scope.base + '/api/health')).json()).pid;
   const upgraded = await scope.run('start');
-  assert.equal(upgraded.version, '0.2.5');
+  assert.equal(upgraded.version, '0.2.6');
   assert.equal(upgraded.mode, 'persistent');
   assert.notEqual(upgraded.pid, oldPid);
   assert.equal((await (await fetch(scope.base + '/api/projects')).json()).length, 1);
   assert.equal(Object.keys(JSON.parse(await readFile(path.join(scope.dir, 'data', 'registry.json'), 'utf8')).projects).length, 1);
+  await scope.run('stop');
+});
+
+test('legacy service without protocolVersion is upgraded instead of reused', async (t) => {
+  const scope = await setup(t);
+  const legacy = http.createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/api/health') return res.end(JSON.stringify({ ok: true, name: 'kanban-viewer', version: '0.2.4' }));
+    if (req.url === '/api/shutdown') { res.end('{"ok":true}'); legacy.close(); legacy.closeAllConnections(); return; }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise((resolve) => legacy.listen(Number(scope.env.AGENT_KANBAN_PORT), '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => legacy.close(resolve)));
+  const upgraded = await scope.run('start');
+  assert.equal(upgraded.version, '0.2.6');
+  assert.equal(upgraded.legacy, false);
+  assert.equal(upgraded.mode, 'auto');
   await scope.run('stop');
 });
 

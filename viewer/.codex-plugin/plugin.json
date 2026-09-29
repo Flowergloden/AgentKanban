@@ -1,6 +1,6 @@
 {
   "name": "kanban",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "线程看板约定、可视化与本地共享服务",
   "skills": "./skills/",
   "hooks": "./hooks/hooks.json"

@@ -20,11 +20,12 @@ test('numeric version comparison never mistakes older client for upgrade', () =>
   assert.throws(() => compareVersions('dev', '0.2.4'), /不可安全比较/);
 });
 
-for (const [label, health, reuse, legacy] of [
-  ['same', { version: '0.2.5', protocolVersion: 1, mode: 'auto' }, true, false],
-  ['newer', { version: '0.2.10', protocolVersion: 1, mode: 'auto' }, true, false],
-  ['incompatible', { version: '0.2.5', protocolVersion: 2, mode: 'auto' }, false, false],
-  ['legacy', { version: '0.1.0' }, true, true],
+for (const [label, health, behavior] of [
+  ['same', { version: '0.2.6', protocolVersion: 1, mode: 'auto' }, 'reuse'],
+  ['newer', { version: '0.2.10', protocolVersion: 1, mode: 'auto' }, 'reuse'],
+  ['incompatible', { version: '0.2.6', protocolVersion: 2, mode: 'auto' }, 'reject'],
+  ['legacy not older', { version: '0.2.6' }, 'reuse-legacy'],
+  ['legacy older', { version: '0.1.0' }, 'upgrade'],
 ]) {
   test(`protocol negotiation: ${label}`, async (t) => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'kanban-protocol-test-'));
@@ -42,13 +43,19 @@ for (const [label, health, reuse, legacy] of [
     });
     await new Promise((resolve) => fake.listen(port, '127.0.0.1', resolve));
     t.after(async () => { await new Promise((resolve) => fake.close(resolve)); await rm(dir, { recursive: true, force: true }); });
-    const invoke = (...args) => exec(process.execPath, [control, ...args], { env, timeout: 5000 });
-    if (reuse) {
+    const invoke = (...args) => exec(process.execPath, [control, ...args], { env, timeout: 9000 });
+    if (behavior === 'reuse' || behavior === 'reuse-legacy') {
       const result = JSON.parse((await invoke('start', '--root', path.join(dir, 'project'))).stdout);
-      assert.equal(result.legacy, legacy);
+      assert.equal(result.legacy, behavior === 'reuse-legacy');
       assert.equal(registered, 1);
-    } else await assert.rejects(invoke('start'), /协议不兼容/);
-    if (legacy) await assert.rejects(invoke('start', '--persistent'), /旧协议不支持常驻/);
-    assert.equal(shutdown, 0);
+      if (behavior === 'reuse-legacy') await assert.rejects(invoke('start', '--persistent'), /旧协议不支持常驻/);
+      assert.equal(shutdown, 0);
+    } else if (behavior === 'reject') {
+      await assert.rejects(invoke('start'), /协议不兼容/);
+      assert.equal(shutdown, 0);
+    } else {
+      await assert.rejects(invoke('start'), /旧服务未正常退出/);
+      assert.equal(shutdown, 1);
+    }
   });
 }

@@ -9,7 +9,7 @@ const server = [
   'metadata.mjs', 'open.mjs', 'registry.mjs', 'server.mjs', 'threads.mjs', 'vcs.mjs',
 ].map((name) => `server/${name}`);
 const web = [
-  'api.js', 'app.js', 'detail.js', 'index.html', 'modals.js', 'service-controls.js',
+  'api.js', 'app.js', 'dep-graph.js', 'detail.js', 'index.html', 'modals.js', 'service-controls.js',
   'views-board.js', 'views-table.js', 'visibility.js',
   'vendor/preact-standalone.module.js',
 ].map((name) => `web/${name}`);

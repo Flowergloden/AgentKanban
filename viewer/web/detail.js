@@ -1,12 +1,28 @@
 import { html, useState, useEffect } from './vendor/preact-standalone.module.js';
 import { api } from './api.js';
 
-const SECTIONS = ['目标', '已完成的工作', '决策', 'Changes'];
+const SECTIONS = ['目标', '已完成的工作', '决策', 'Changes', '依赖'];
 const STATUSES = ['立项', '规划', '实现', '完成'];
 // 「目标」随手可改（单击进入编辑）；其余小节默认只读，点「编辑」解锁
 const FREE_EDIT = new Set(['目标']);
 
-export function ThreadDetail({ root, threadId, isActive, onBack, onChanged, onRequestDelete }) {
+// 阅读模式下渲染 `## 依赖`：序号条目链接化为被依赖线程标题（点击跳转详情），悬空序号加删除线不渲染链接
+function renderDeps(body, threads, onOpen) {
+  const lines = body.split('\n').filter((l) => l.trim());
+  if (!lines.length) return html`<pre class="section-body">（空）</pre>`;
+  const byNum = new Map((threads ?? []).map((t) => [t.id.slice(0, 4), t]));
+  return html`<pre class="section-body">${lines.map((line, i) => {
+    const m = line.match(/\d{4}/);
+    if (!m) return html`${line}${'\n'}`;
+    const target = byNum.get(m[0]);
+    if (!target) {
+      return html`<span key=${i} style="text-decoration:line-through" title="悬空引用：无对应线程">${line}${'\n'}</span>`;
+    }
+    return html`<a key=${i} href="#" onClick=${(e) => { e.preventDefault(); onOpen(target.id); }}>${target.id} ${target.title}</a>${'\n'}`;
+  })}</pre>`;
+}
+
+export function ThreadDetail({ root, threadId, isActive, threads, onBack, onOpen, onChanged, onRequestDelete }) {
   const [thread, setThread] = useState(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null); // { section, content }
@@ -113,7 +129,7 @@ export function ThreadDetail({ root, threadId, isActive, onBack, onChanged, onRe
             />
             <button class="primary" disabled=${busy} onClick=${save}>保存</button>
             <button disabled=${busy} onClick=${() => setEditing(null)}>取消</button>
-          ` : html`
+          ` : name === '依赖' ? renderDeps(body, threads, onOpen) : html`
             <pre
               class=${'section-body' + (free ? ' editable' : '')}
               onClick=${() => free && setEditing({ section: name, content: body })}

@@ -4,6 +4,7 @@ import { watchVisibleActivity } from './visibility.js';
 import { changeServiceMode, stopServiceWithConfirmation } from './service-controls.js';
 import { ThreadTable, UnfinishedView } from './views-table.js';
 import { BoardView } from './views-board.js';
+import { DepGraphView } from './dep-graph.js';
 import { ThreadDetail } from './detail.js';
 import { CreateModal, DeleteModal, NoteModal, P4AddModal } from './modals.js';
 
@@ -11,6 +12,7 @@ const VIEWS = [
   { key: 'table', label: '全部' },
   { key: 'board', label: '看板' },
   { key: 'unfinished', label: '未完成' },
+  { key: 'depgraph', label: '依赖图' },
 ];
 
 function App() {
@@ -150,7 +152,9 @@ function App() {
             root=${root}
             threadId=${selectedId}
             isActive=${activeThread?.id === selectedId}
+            threads=${threads}
             onBack=${() => { setSelectedId(null); refresh(); }}
+            onOpen=${openThread}
             onChanged=${() => refresh()}
             onRequestDelete=${(id) => setDeleteTarget({ root, id, title: threads.find((t) => t.id === id)?.title ?? id, active: activeThread?.id === id })}
           />
@@ -158,6 +162,8 @@ function App() {
           <${BoardView} root=${root} threads=${threads} onOpen=${openThread} onChanged=${() => refresh()} onError=${setError} />
         ` : view === 'unfinished' ? html`
           <${UnfinishedView} threads=${threads} onOpen=${openThread} />
+        ` : view === 'depgraph' ? html`
+          <${DepGraphView} root=${root} threads=${threads} onOpen=${openThread} onChanged=${() => refresh()} />
         ` : html`
           <${ThreadTable} threads=${threads} onOpen=${openThread} />
         `}

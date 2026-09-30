@@ -52,6 +52,10 @@ status: 立项
 <!-- （可选）关联的 OpenSpec change 名字列表，仅当本线程使用 OpenSpec 工作流时才登记；不使用时留空即可。一行一条（仅名字，松耦合引用），例如：
 - add-xxx
 -->
+
+## 依赖
+
+<!-- （可选）本线程依赖的其他线程：纯序号、一行一条，仅记录关系，不约束状态流转或完成。 -->
 `;
 
 // 内置默认全局便签：内容与语义见 kanban/README.md（仅供人类阅读，不参与工作流）
@@ -198,6 +202,16 @@ async function readThreadFile(root, id) {
   }
 }
 
+// 依赖解析：`## 依赖` 小节逐行提取首位四位序号，保持书写顺序、去重，非法行静默忽略
+export function parseDeps(body) {
+  const deps = [];
+  for (const line of String(body ?? '').split('\n')) {
+    const m = line.match(/\d{4}/);
+    if (m && !deps.includes(m[0])) deps.push(m[0]);
+  }
+  return deps;
+}
+
 // 线程列表投影
 export async function parseList(root) {
   const activeId = await readActiveId(root);
@@ -225,6 +239,7 @@ export async function parseList(root) {
         mtimeMs: 0,
         active: id === activeId,
         goalExcerpt: '',
+        deps: [],
         error: '卷宗缺失',
       });
       continue;
@@ -237,6 +252,7 @@ export async function parseList(root) {
       .filter((l) => l && !l.startsWith('<!--'))
       .join(' ')
       .slice(0, 120);
+    const depsBody = parsed.sections.find((s) => s.name === '依赖')?.body ?? '';
     threads.push({
       id,
       title: parsed.title || id,
@@ -244,6 +260,7 @@ export async function parseList(root) {
       mtimeMs: Math.round(stat.mtimeMs),
       active: id === activeId,
       goalExcerpt,
+      deps: parseDeps(depsBody),
       ...(parsed.errors.length > 0 ? { error: '卷宗异常：' + parsed.errors.join('；') } : {}),
     });
   }
@@ -310,6 +327,16 @@ function replaceSection(text, sectionName, content) {
   return out.join(eol);
 }
 
+// 在卷宗末尾补建小节（仅用于 `依赖` 窄口）：与既有小节保持相同空行结构，正文剥离首尾空行
+function appendSection(text, sectionName, content) {
+  const eol = detectEol(text);
+  const bodyLines = String(content).split(/\r?\n/);
+  while (bodyLines.length && bodyLines[0].trim() === '') bodyLines.shift();
+  while (bodyLines.length && bodyLines[bodyLines.length - 1].trim() === '') bodyLines.pop();
+  const prefix = text.replace(/(\r?\n)*$/, eol + eol);
+  return prefix + `## ${sectionName}` + eol + eol + bodyLines.join(eol) + eol;
+}
+
 // 小节更新（乐观并发）
 export async function updateSection(root, id, section, content, expectedFingerprint) {
   if (typeof section !== 'string' || !section) {
@@ -320,7 +347,14 @@ export async function updateSection(root, id, section, content, expectedFingerpr
   if (fingerprint(text) !== expectedFingerprint) {
     throw new ThreadError('conflict', '文件已被修改，指纹不匹配');
   }
-  const updated = replaceSection(text, section, String(content ?? ''));
+  let updated;
+  try {
+    updated = replaceSection(text, section, String(content ?? ''));
+  } catch (err) {
+    // 窄口：仅 `依赖` 小节缺失时在卷宗末尾补建，其余小节缺失仍报错
+    if (!(err instanceof ThreadError && err.code === 'section-missing' && section === '依赖')) throw err;
+    updated = appendSection(text, section, String(content ?? ''));
+  }
   await checkedWrite(root, file, updated);
   return { fingerprint: fingerprint(updated) };
 }

@@ -50,3 +50,6 @@ status: 完成
 - add-plugin-distribution
 - fix-plugin-update-lock
 - add-codex-distribution
+
+## 依赖
+

@@ -53,6 +53,10 @@
   .modal .modal-error { color: #cf222e; font-size: 13px; margin-top: 8px; }
   .p4-file-list { margin: 8px 0; padding-left: 20px; font-size: 13px; max-height: 30vh; overflow: auto; }
   .p4-file-list li { margin: 2px 0; }
+  .dep-graph-wrap { overflow: auto; background: #fff; border: 1px solid #d0d7de; border-radius: 8px; max-height: calc(100vh - 140px); }
+  .dep-node { cursor: grab; }
+  .dep-node .dep-handle { opacity: 0; fill: #1f6feb; stroke: #fff; stroke-width: 2; cursor: crosshair; }
+  .dep-node:hover .dep-handle { opacity: 1; }
 </style>
 </head>
 <body>

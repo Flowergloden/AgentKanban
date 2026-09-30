@@ -242,3 +242,7 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+### Kanban (machine-local thread state)
+kanban/current
+kanban/note.md
+

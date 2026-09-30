@@ -5,7 +5,7 @@ import { changeServiceMode, stopServiceWithConfirmation } from './service-contro
 import { ThreadTable, UnfinishedView } from './views-table.js';
 import { BoardView } from './views-board.js';
 import { ThreadDetail } from './detail.js';
-import { CreateModal, DeleteModal, NoteModal } from './modals.js';
+import { CreateModal, DeleteModal, NoteModal, P4AddModal } from './modals.js';
 
 const VIEWS = [
   { key: 'table', label: '全部' },
@@ -22,6 +22,7 @@ function App() {
   const [showCreate, setShowCreate] = useState(false);
   const [showNote, setShowNote] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [addRequest, setAddRequest] = useState(null); // { files: [...] }：P4 新建文件待询问 add
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [mode, setMode] = useState(null);
@@ -38,10 +39,10 @@ function App() {
         list = await api.listProjects();
       } catch {
       }
-      const roots = list.map((p) => p.root);
-      if (paramRoot && !roots.includes(paramRoot)) roots.unshift(paramRoot);
-      setProjects(roots);
-      const current = paramRoot || roots[0] || '';
+      const entries = list.map((p) => ({ root: p.root, vcs: p.vcs }));
+      if (paramRoot && !entries.some((p) => p.root === paramRoot)) entries.unshift({ root: paramRoot });
+      setProjects(entries);
+      const current = paramRoot || entries[0]?.root || '';
       setRoot(current);
       if (!current) {
         setError('注册表为空：尚未有项目注册，请通过 Kimi 或 Codex 在项目中启动看板服务。');
@@ -81,6 +82,12 @@ function App() {
     }
   };
 
+  const isP4 = projects.find((p) => p.root === root)?.vcs?.type === 'p4';
+  // P4 项目出现新建文件时询问是否 add；拒绝则关闭弹窗，不就同一批文件重复询问
+  const maybeAskAdd = (created) => {
+    if (isP4 && created?.length) setAddRequest({ files: created });
+  };
+
   useEffect(() => {
     setThreads(null);
     setSelectedId(null);
@@ -88,8 +95,16 @@ function App() {
     if (!root) return;
     // 先幂等初始化项目 kanban 结构（旧版服务无该接口时静默跳过），再刷新列表
     api.init(root)
-      .then((r) => {
-        if (r?.created?.length) setNotice(`已自动初始化：${r.created.join('、')}`);
+      .then(async (r) => {
+        // init 服务端已刷新 P4 受管检测：回读项目列表更新徽标，再决定是否询问 add
+        const list = await api.listProjects().catch(() => null);
+        const entries = list ? list.map((p) => ({ root: p.root, vcs: p.vcs })) : null;
+        if (entries) setProjects(entries);
+        if (r?.created?.length) {
+          setNotice(`已自动初始化：${r.created.join('、')}`);
+          const freshP4 = entries?.find((p) => p.root === root)?.vcs?.type === 'p4';
+          if (freshP4) setAddRequest({ files: r.created });
+        }
       })
       .catch(() => {})
       .finally(() => refresh(root));
@@ -104,7 +119,7 @@ function App() {
       <span class="title">看板</span>
       ${projects.length > 0 && html`
         <select value=${root} onChange=${(e) => setRoot(e.target.value)}>
-          ${projects.map((p) => html`<option key=${p} value=${p}>${p}</option>`)}
+          ${projects.map((p) => html`<option key=${p.root} value=${p.root}>${p.root}${p.vcs?.type === 'p4' ? ' 〔P4〕' : ''}</option>`)}
         </select>
       `}
       <span class="service-mode">共享服务：${mode === 'persistent' ? '常驻' : mode === 'auto' ? '自动' : '未连接'}（影响所有项目）</span>
@@ -152,7 +167,15 @@ function App() {
       <${CreateModal}
         root=${root}
         onClose=${() => setShowCreate(false)}
-        onCreated=${async (id) => { setShowCreate(false); await refresh(); setSelectedId(id); }}
+        onCreated=${async (id, created) => { setShowCreate(false); await refresh(); setSelectedId(id); maybeAskAdd(created); }}
+      />
+    `}
+    ${addRequest && html`
+      <${P4AddModal}
+        root=${root}
+        files=${addRequest.files}
+        onClose=${() => setAddRequest(null)}
+        onAdded=${(files) => { setAddRequest(null); setNotice(`已 p4 add：${files.join('、')}（留在默认 changelist，请自行提交）`); }}
       />
     `}
     ${showNote && html`

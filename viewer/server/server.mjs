@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as threads from './threads.mjs';
+import * as vcs from './vcs.mjs';
 import { loadServiceMetadata } from './metadata.mjs';
 import { registryPaths, loadRegistry, saveRegistry, normalizeRoot } from './registry.mjs';
 import { createLifecycle, CHECK_INTERVAL_MS } from './lifecycle.mjs';
@@ -34,6 +35,34 @@ const CONTENT_TYPES = {
 
 const projects = await loadRegistry();
 const lifecycle = createLifecycle({ initialMode: process.env.AGENT_KANBAN_INITIAL_MODE || 'auto' });
+
+// 装配 vcs 内存缓存（注册表持久层 ↔ 写路径读缓存）；key 统一为归一化 root
+for (const [root, entry] of projects) {
+  if (entry.vcs) vcs.setCached(root, entry.vcs.type);
+}
+
+// 更新项目 lastSeen，保留既有 vcs 检测缓存
+function touchProject(root, now = Date.now()) {
+  const key = normalizeRoot(root);
+  const prev = projects.get(key);
+  projects.set(key, { lastSeen: now, ...(prev?.vcs ? { vcs: prev.vcs } : {}) });
+}
+
+// 受管检测并刷新注册表缓存字段；'unknown'（服务器不可达）保留既有缓存，检测失败按非 P4 处理且不报错
+async function refreshVcs(root) {
+  try {
+    const type = await vcs.detect(root);
+    if (type === 'unknown') return;
+    const key = normalizeRoot(root);
+    const prev = projects.get(key);
+    if (!prev) return;
+    projects.set(key, { lastSeen: prev.lastSeen, vcs: { type, checkedAt: Date.now() } });
+    vcs.setCached(key, type);
+    await saveRegistry(registryFile, projects);
+  } catch {
+    // 检测异常不向用户报错
+  }
+}
 
 function sendJson(res, status, data) {
   if (status >= 200 && status < 300 && res.kanbanBusiness) lifecycle.activity();
@@ -173,9 +202,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/register') {
       const { root } = await readJsonBody(req);
       if (typeof root !== 'string' || !root) return sendJson(res, 400, { error: 'root is required' });
-      projects.set(normalizeRoot(root), Date.now());
+      touchProject(root);
       await saveRegistry(registryFile, projects);
       lifecycle.activity();
+      await refreshVcs(root);
       return sendJson(res, 200, { ok: true });
     }
 
@@ -186,7 +216,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'invalid activity' });
       const now = Date.now();
       if (body.root) {
-        projects.set(normalizeRoot(body.root), now);
+        touchProject(body.root, now);
         await saveRegistry(registryFile, projects);
       }
       lifecycle.activity();
@@ -194,7 +224,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const list = [...projects.entries()]
-        .map(([root, lastSeen]) => ({ root, lastSeen }))
+        .map(([root, entry]) => ({ root, lastSeen: entry.lastSeen, ...(entry.vcs ? { vcs: entry.vcs } : {}) }))
         .sort((a, b) => b.lastSeen - a.lastSeen);
       return sendJson(res, 200, list);
     }
@@ -207,7 +237,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/api/init') {
       const body = await readJsonBody(req);
-      return sendJson(res, 200, await threads.ensureLayout(requireRoot(body.root)));
+      const root = requireRoot(body.root);
+      const result = await threads.ensureLayout(root);
+      await refreshVcs(root);
+      return sendJson(res, 200, result);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/threads') {
@@ -250,6 +283,31 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const result = await threads.create(requireRoot(body.root), body.title, body.slug, body.goal);
       return sendJson(res, 200, result);
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/vcs/add') {
+      const body = await readJsonBody(req);
+      const root = requireRoot(body.root);
+      const files = body.files;
+      if (!Array.isArray(files) || files.length === 0 || !files.every((f) => typeof f === 'string' && f)) {
+        return sendJson(res, 400, { error: 'files 是非空字符串数组' });
+      }
+      if (vcs.getCached(root) !== 'p4') {
+        return sendJson(res, 409, { error: '项目当前非 P4 受管，无法 add' });
+      }
+      // 越界校验：任何一条位于 kanban/ 子树外都整体拒绝，且不执行任何 p4 操作
+      const kanbanRoot = path.resolve(root, 'kanban');
+      for (const f of files) {
+        const abs = path.resolve(root, f);
+        if (abs !== kanbanRoot && !abs.startsWith(kanbanRoot + path.sep)) {
+          return sendJson(res, 400, { error: `路径越界（必须位于项目 kanban/ 子树内）：${f}` });
+        }
+      }
+      const result = await vcs.add(root, files.map((f) => path.resolve(root, f)));
+      if (result.state === 'hard-fail') {
+        throw new threads.ThreadError('vcs-error', `P4 add 失败：${result.reason}`);
+      }
+      return sendJson(res, 200, { ok: true });
     }
 
     const renameMatch = url.pathname.match(/^\/api\/threads\/([\w-]+)\/rename$/);

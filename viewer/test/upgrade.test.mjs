@@ -30,7 +30,7 @@ async function oldService({ dir, env, base }) {
   const old = path.join(dir, 'old-viewer');
   await mkdir(path.join(old, 'server'), { recursive: true });
   await mkdir(path.join(old, 'web'));
-  for (const file of ['server.mjs', 'metadata.mjs', 'registry.mjs', 'lock.mjs', 'lifecycle.mjs', 'threads.mjs'])
+  for (const file of ['server.mjs', 'metadata.mjs', 'registry.mjs', 'lock.mjs', 'lifecycle.mjs', 'threads.mjs', 'vcs.mjs'])
     await copyFile(path.join(viewer, 'server', file), path.join(old, 'server', file));
   await writeFile(path.join(old, 'service.json'), JSON.stringify({ version: '0.2.3', protocolVersion: 1 }));
   const child = spawn(process.execPath, [path.join(old, 'server', 'server.mjs')], { env: { ...env, AGENT_KANBAN_INITIAL_MODE: 'persistent' }, cwd: os.tmpdir(), stdio: 'ignore' });
@@ -51,7 +51,7 @@ test('coordinated upgrade preserves persistent mode and registry', async (t) => 
   assert.equal((await fetch(scope.base + '/api/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ root }) })).status, 200);
   const oldPid = (await (await fetch(scope.base + '/api/health')).json()).pid;
   const upgraded = await scope.run('start');
-  assert.equal(upgraded.version, '0.2.6');
+  assert.equal(upgraded.version, '0.2.7');
   assert.equal(upgraded.mode, 'persistent');
   assert.notEqual(upgraded.pid, oldPid);
   assert.equal((await (await fetch(scope.base + '/api/projects')).json()).length, 1);
@@ -71,7 +71,7 @@ test('legacy service without protocolVersion is upgraded instead of reused', asy
   await new Promise((resolve) => legacy.listen(Number(scope.env.AGENT_KANBAN_PORT), '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => legacy.close(resolve)));
   const upgraded = await scope.run('start');
-  assert.equal(upgraded.version, '0.2.6');
+  assert.equal(upgraded.version, '0.2.7');
   assert.equal(upgraded.legacy, false);
   assert.equal(upgraded.mode, 'auto');
   await scope.run('stop');

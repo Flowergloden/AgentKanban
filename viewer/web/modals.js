@@ -20,8 +20,8 @@ export function CreateModal({ root, onClose, onCreated }) {
     setBusy(true);
     setError('');
     try {
-      const { id } = await api.createThread(root, title.trim(), slug.trim(), goal.trim());
-      onCreated(id);
+      const { id, created } = await api.createThread(root, title.trim(), slug.trim(), goal.trim());
+      onCreated(id, created);
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -124,6 +124,40 @@ export function NoteModal({ root, onClose }) {
         <div class="modal-actions">
           <button onClick=${onClose} disabled=${busy}>取消</button>
           <button class="primary" onClick=${save} disabled=${busy || content === null}>保存</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export function P4AddModal({ root, files, onClose, onAdded }) {
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const confirm = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api.vcsAdd(root, files);
+      onAdded(files);
+    } catch (err) {
+      setError(`p4 add 失败：${err.message}`);
+      setBusy(false);
+    }
+  };
+
+  return html`
+    <div class="modal-mask" onClick=${(e) => e.target === e.currentTarget && !busy && onClose()}>
+      <div class="modal">
+        <h3>新文件纳入 P4 管理？</h3>
+        <div class="hint" style="margin-top:0">该项目受 Perforce 管理，以下新建文件尚未纳入版本管理。确认后将执行 <code>p4 add</code>（留在默认 changelist，由你自行提交）。</div>
+        <ul class="p4-file-list">
+          ${files.map((f) => html`<li key=${f}><code>${f}</code></li>`)}
+        </ul>
+        ${error && html`<div class="modal-error">${error}</div>`}
+        <div class="modal-actions">
+          <button onClick=${onClose} disabled=${busy}>不 add</button>
+          <button class="primary" onClick=${confirm} disabled=${busy}>p4 add</button>
         </div>
       </div>
     </div>

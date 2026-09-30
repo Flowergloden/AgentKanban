@@ -6,7 +6,7 @@ const repo = fileURLToPath(new URL('..', import.meta.url));
 const sourceDefault = path.join(repo, 'viewer');
 const server = [
   'activity.mjs', 'control.mjs', 'lifecycle.mjs', 'lock.mjs', 'manager.mjs',
-  'metadata.mjs', 'open.mjs', 'registry.mjs', 'server.mjs', 'threads.mjs',
+  'metadata.mjs', 'open.mjs', 'registry.mjs', 'server.mjs', 'threads.mjs', 'vcs.mjs',
 ].map((name) => `server/${name}`);
 const web = [
   'api.js', 'app.js', 'detail.js', 'index.html', 'modals.js', 'service-controls.js',

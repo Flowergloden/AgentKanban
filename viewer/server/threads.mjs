@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import * as vcs from './vcs.mjs';
 
 const VALID_STATUSES = ['立项', '规划', '实现', '完成'];
 const REQUIRED_SECTIONS = ['目标', '已完成的工作', '决策', 'Changes'];
@@ -98,6 +99,38 @@ async function atomicWrite(file, content) {
   const tmpFile = file + '.tmp';
   await fs.writeFile(tmpFile, content, 'utf8');
   await fs.rename(tmpFile, file);
+}
+
+function isReadonlyError(err) {
+  return err && (err.code === 'EPERM' || err.code === 'EACCES');
+}
+
+// P4 项目覆写前 checkout：unmanaged 落回普通写盘；hard-fail 抛出携带原因的明确错误
+async function checkoutOrThrow(root, file) {
+  const r = await vcs.edit(root, file);
+  if (r.state === 'hard-fail') {
+    throw new ThreadError('vcs-error', `P4 checkout 失败：${r.reason}`);
+  }
+}
+
+// 全部内容覆写的统一入口：kanban/current、卷宗小节、status、便签
+async function checkedWrite(root, file, content) {
+  if (vcs.getCached(root) === 'p4') {
+    await checkoutOrThrow(root, file);
+  }
+  try {
+    await atomicWrite(file, content);
+  } catch (err) {
+    if (!isReadonlyError(err)) throw err;
+    // 只读兜底阶梯：重新检测一次，翻转为 P4 则按 P4 路径重试一次（覆盖检测缓存陈旧）
+    if (await vcs.detect(root) === 'p4') {
+      vcs.setCached(root, 'p4');
+      await checkoutOrThrow(root, file);
+      await atomicWrite(file, content);
+      return;
+    }
+    throw new ThreadError('write-failed', `写盘失败（目标文件只读）：${path.basename(file)}`);
+  }
 }
 
 async function readActiveId(root) {
@@ -288,7 +321,7 @@ export async function updateSection(root, id, section, content, expectedFingerpr
     throw new ThreadError('conflict', '文件已被修改，指纹不匹配');
   }
   const updated = replaceSection(text, section, String(content ?? ''));
-  await atomicWrite(file, updated);
+  await checkedWrite(root, file, updated);
   return { fingerprint: fingerprint(updated) };
 }
 
@@ -321,7 +354,7 @@ export async function updateNote(root, content, expectedFingerprint) {
   if (fingerprint(text) !== expectedFingerprint) {
     throw new ThreadError('conflict', '文件已被修改，指纹不匹配');
   }
-  await atomicWrite(file, content);
+  await checkedWrite(root, file, content);
   return { fingerprint: fingerprint(content) };
 }
 
@@ -338,7 +371,7 @@ export async function setStatus(root, id, status) {
   if (idx === -1) throw new ThreadError('thread-invalid', '卷宗缺少 status 行');
   lines[idx] = `status: ${status}`;
   const updated = lines.join(eol);
-  await atomicWrite(file, updated);
+  await checkedWrite(root, file, updated);
   return { fingerprint: fingerprint(updated) };
 }
 
@@ -385,7 +418,7 @@ export async function create(root, title, slug, goal) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(finalSlug)) {
     throw new ThreadError('bad-request', `slug 必须是 kebab-case：${finalSlug}`);
   }
-  await ensureLayout(root);
+  const ensured = await ensureLayout(root);
   const entries = await fs.readdir(threadsDir(root), { withFileTypes: true });
   let maxNum = 0;
   for (const entry of entries) {
@@ -428,7 +461,15 @@ export async function create(root, title, slug, goal) {
     }
   }
   await fs.writeFile(path.join(dir, 'thread.md'), finalText, 'utf8');
-  return { id };
+  const created = [...ensured.created, path.relative(root, path.join(dir, 'thread.md')).replace(/\\/g, '/')];
+  return { id, created };
+}
+
+// fstat 门控查询：hard-fail 抛携带原因的明确错误
+async function p4FstatOrThrow(root, file) {
+  const r = await vcs.fstat(root, file);
+  if (r.state === 'hard-fail') throw new ThreadError('vcs-error', `P4 状态查询失败：${r.reason}`);
+  return r;
 }
 
 // 线程重命名：目录更名为 `序号-新slug`，活跃线程同步更新 kanban/current
@@ -461,11 +502,32 @@ export async function rename(root, id, newSlug) {
     }
   }
   // 先改目录后写 current，保证 current 不会短暂指向缺失目录
-  await fs.rename(dir, path.join(threadsDir(root), newId));
+  const newDir = path.join(threadsDir(root), newId);
+  const file = path.join(dir, 'thread.md');
+  if (vcs.getCached(root) === 'p4') {
+    // fstat 三态门控：已入 depot 用 p4 move 保持历史连续（对 open-for-edit 源亦成立，实测 1.3a）；
+    // open-for-add 走 FS 改名 + revert 旧路径 + add 新路径；未托管纯 FS 改名
+    const st = await p4FstatOrThrow(root, file);
+    if (st.file === 'depot') {
+      const mv = await vcs.move(root, file, path.join(newDir, 'thread.md'));
+      if (mv.state === 'hard-fail') throw new ThreadError('vcs-error', `P4 move 失败：${mv.reason}`);
+      if (mv.state === 'unmanaged') await fs.rename(dir, newDir); // 异常分支落回普通改名
+    } else if (st.file === 'add') {
+      await fs.rename(dir, newDir);
+      const rv = await vcs.revert(root, file);
+      if (rv.state === 'hard-fail') throw new ThreadError('vcs-error', `P4 revert 失败：${rv.reason}`);
+      const ad = await vcs.add(root, [path.join(newDir, 'thread.md')]);
+      if (ad.state === 'hard-fail') throw new ThreadError('vcs-error', `P4 add 失败：${ad.reason}`);
+    } else {
+      await fs.rename(dir, newDir);
+    }
+  } else {
+    await fs.rename(dir, newDir);
+  }
   const activeId = await readActiveId(root);
   if (activeId === id) {
     await ensureLayout(root);
-    await atomicWrite(path.join(kanbanDir(root), 'current'), newId);
+    await checkedWrite(root, path.join(kanbanDir(root), 'current'), newId);
   }
   return { id: newId };
 }
@@ -473,6 +535,27 @@ export async function rename(root, id, newSlug) {
 // 线程删除（真删）
 export async function remove(root, id) {
   const dir = path.join(threadsDir(root), id);
+  const stat = await fs.stat(dir).catch(() => null);
+  if (!stat || !stat.isDirectory()) {
+    throw new ThreadError('thread-missing', `线程不存在：${id}`);
+  }
+  if (vcs.getCached(root) === 'p4') {
+    // fstat 三态门控：已入 depot 用 p4 delete（open-for-edit 时 p4 delete 为静默 no-op，实测 1.4，故先 revert）；
+    // open-for-add 先 revert 撤销 add 记录再普通删除；未托管纯文件删除
+    const file = path.join(dir, 'thread.md');
+    const st = await p4FstatOrThrow(root, file);
+    if (st.file === 'depot') {
+      if (st.open && st.open !== 'add') {
+        const rv = await vcs.revert(root, file);
+        if (rv.state === 'hard-fail') throw new ThreadError('vcs-error', `P4 revert 失败：${rv.reason}`);
+      }
+      const dl = await vcs.del(root, file);
+      if (dl.state === 'hard-fail') throw new ThreadError('vcs-error', `P4 delete 失败：${dl.reason}`);
+    } else if (st.file === 'add') {
+      const rv = await vcs.revert(root, file);
+      if (rv.state === 'hard-fail') throw new ThreadError('vcs-error', `P4 revert 失败：${rv.reason}`);
+    }
+  }
   try {
     await fs.rm(dir, { recursive: true });
   } catch (err) {
@@ -482,7 +565,7 @@ export async function remove(root, id) {
   const activeId = await readActiveId(root);
   if (activeId === id) {
     await ensureLayout(root);
-    await atomicWrite(path.join(kanbanDir(root), 'current'), '');
+    await checkedWrite(root, path.join(kanbanDir(root), 'current'), '');
   }
   return { ok: true };
 }
@@ -492,7 +575,7 @@ export async function setActive(root, id) {
   const currentFile = path.join(kanbanDir(root), 'current');
   if (id === null || id === '') {
     await ensureLayout(root);
-    await atomicWrite(currentFile, '');
+    await checkedWrite(root, currentFile, '');
     return { ok: true };
   }
   try {
@@ -502,7 +585,7 @@ export async function setActive(root, id) {
     throw new ThreadError('thread-missing', `线程不存在：${id}`);
   }
   await ensureLayout(root);
-  await atomicWrite(currentFile, id);
+  await checkedWrite(root, currentFile, id);
   return { ok: true };
 }
 

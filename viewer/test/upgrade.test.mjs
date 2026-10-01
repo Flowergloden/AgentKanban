@@ -51,7 +51,7 @@ test('coordinated upgrade preserves persistent mode and registry', async (t) => 
   assert.equal((await fetch(scope.base + '/api/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ root }) })).status, 200);
   const oldPid = (await (await fetch(scope.base + '/api/health')).json()).pid;
   const upgraded = await scope.run('start');
-  assert.equal(upgraded.version, '0.2.8');
+  assert.equal(upgraded.version, '0.2.9');
   assert.equal(upgraded.mode, 'persistent');
   assert.notEqual(upgraded.pid, oldPid);
   assert.equal((await (await fetch(scope.base + '/api/projects')).json()).length, 1);
@@ -71,7 +71,7 @@ test('legacy service without protocolVersion is upgraded instead of reused', asy
   await new Promise((resolve) => legacy.listen(Number(scope.env.AGENT_KANBAN_PORT), '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => legacy.close(resolve)));
   const upgraded = await scope.run('start');
-  assert.equal(upgraded.version, '0.2.8');
+  assert.equal(upgraded.version, '0.2.9');
   assert.equal(upgraded.legacy, false);
   assert.equal(upgraded.mode, 'auto');
   await scope.run('stop');

@@ -42,11 +42,11 @@ async function archiveAndUnpack(stage, dir, host) {
 test('all three release archives unpack with exact runtime resources and no development data', async (t) => {
   const dir = await sandbox(t);
   const stage = path.join(dir, 'stage');
-  await stageRelease(viewer, stage, 'v0.2.9');
+  await stageRelease(viewer, stage, 'v0.2.12');
   for (const host of ['kimi', 'codex', 'claude']) {
     const extracted = await archiveAndUnpack(stage, dir, host);
-    const result = await verifyPackage(extracted, host, 'v0.2.9');
-    assert.equal(result.version, '0.2.9');
+    const result = await verifyPackage(extracted, host, 'v0.2.12');
+    assert.equal(result.version, '0.2.12');
     assert.deepEqual(await listTree(extracted), [...filesFor(host)].sort());
     const expected = { kimi: 'kimi.plugin.json', codex: '.codex-plugin/plugin.json', claude: '.claude-plugin/plugin.json' }[host];
     assert.ok((await readFile(path.join(extracted, expected))).length > 0);
@@ -65,7 +65,7 @@ for (const manifest of ['kimi.plugin.json', '.codex-plugin/plugin.json', '.claud
     data.version = '9.9.9';
     await writeFile(file, JSON.stringify(data));
     const stage = path.join(dir, 'stage');
-    await assert.rejects(stageRelease(source, stage, 'v0.2.9'), /version mismatch/);
+    await assert.rejects(stageRelease(source, stage, 'v0.2.12'), /version mismatch/);
     await assert.rejects(readFile(path.join(stage, 'kimi', 'service.json')));
   });
 }
@@ -73,51 +73,51 @@ for (const manifest of ['kimi.plugin.json', '.codex-plugin/plugin.json', '.claud
 test('missing hooks, entry resources or hidden Codex manifest fail upload verification', async (t) => {
   const dir = await sandbox(t);
   const stage = path.join(dir, 'stage');
-  await stageRelease(viewer, stage, 'v0.2.9');
+  await stageRelease(viewer, stage, 'v0.2.12');
   const extracted = await archiveAndUnpack(stage, dir, 'codex');
   const manifest = path.join(extracted, '.codex-plugin', 'plugin.json');
   await unlink(manifest);
-  await assert.rejects(verifyPackage(extracted, 'codex', 'v0.2.9'), /missing=.*\.codex-plugin\/plugin.json/);
+  await assert.rejects(verifyPackage(extracted, 'codex', 'v0.2.12'), /missing=.*\.codex-plugin\/plugin.json/);
   await cp(path.join(stage, 'codex', '.codex-plugin', 'plugin.json'), manifest);
   await unlink(path.join(extracted, 'server', 'codex-hook.mjs'));
-  await assert.rejects(verifyPackage(extracted, 'codex', 'v0.2.9'), /missing=.*codex-hook.mjs/);
+  await assert.rejects(verifyPackage(extracted, 'codex', 'v0.2.12'), /missing=.*codex-hook.mjs/);
 });
 
 test('packaged plugin reference mismatch and extra development file are rejected', async (t) => {
   const dir = await sandbox(t);
   const stage = path.join(dir, 'stage');
-  await stageRelease(viewer, stage, 'v0.2.9');
+  await stageRelease(viewer, stage, 'v0.2.12');
   const root = path.join(stage, 'codex');
   const hookFile = path.join(root, 'hooks', 'hooks.json');
   const hooks = JSON.parse(await readFile(hookFile, 'utf8'));
   hooks.hooks.SessionStart[0].hooks[0].command = 'node "${PLUGIN_ROOT}/server/missing.mjs" start';
   await writeFile(hookFile, JSON.stringify(hooks));
-  await assert.rejects(verifyPackage(root, 'codex', 'v0.2.9'), /missing Codex hook script/);
+  await assert.rejects(verifyPackage(root, 'codex', 'v0.2.12'), /missing Codex hook script/);
   await cp(path.join(viewer, 'hooks', 'hooks.json'), hookFile);
   await writeFile(path.join(root, 'test-data.txt'), 'should not ship');
-  await assert.rejects(verifyPackage(root, 'codex', 'v0.2.9'), /extra=test-data.txt/);
+  await assert.rejects(verifyPackage(root, 'codex', 'v0.2.12'), /extra=test-data.txt/);
 });
 
 test('Claude missing manifest, missing hook script or mixed Codex hooks fail verification', async (t) => {
   const dir = await sandbox(t);
   const stage = path.join(dir, 'stage');
-  await stageRelease(viewer, stage, 'v0.2.9');
+  await stageRelease(viewer, stage, 'v0.2.12');
   const extracted = await archiveAndUnpack(stage, dir, 'claude');
   const manifest = path.join(extracted, '.claude-plugin', 'plugin.json');
   await unlink(manifest);
-  await assert.rejects(verifyPackage(extracted, 'claude', 'v0.2.9'), /missing=.*\.claude-plugin\/plugin.json/);
+  await assert.rejects(verifyPackage(extracted, 'claude', 'v0.2.12'), /missing=.*\.claude-plugin\/plugin.json/);
   await cp(path.join(stage, 'claude', '.claude-plugin', 'plugin.json'), manifest);
   await unlink(path.join(extracted, 'server', 'codex-hook.mjs'));
-  await assert.rejects(verifyPackage(extracted, 'claude', 'v0.2.9'), /missing=.*codex-hook.mjs/);
+  await assert.rejects(verifyPackage(extracted, 'claude', 'v0.2.12'), /missing=.*codex-hook.mjs/);
   await cp(path.join(stage, 'claude', 'server', 'codex-hook.mjs'), path.join(extracted, 'server', 'codex-hook.mjs'));
   const hooksFile = path.join(extracted, 'hooks', 'claude-hooks.json');
   const hooks = JSON.parse(await readFile(hooksFile, 'utf8'));
   hooks.hooks.SessionStart[0].hooks[0].args[0] = '${CLAUDE_PLUGIN_ROOT}/server/missing.mjs';
   await writeFile(hooksFile, JSON.stringify(hooks));
-  await assert.rejects(verifyPackage(extracted, 'claude', 'v0.2.9'), /missing Claude hook script/);
+  await assert.rejects(verifyPackage(extracted, 'claude', 'v0.2.12'), /missing Claude hook script/);
   await cp(path.join(viewer, 'hooks', 'claude-hooks.json'), hooksFile);
   await writeFile(path.join(extracted, 'hooks', 'hooks.json'), '{}');
-  await assert.rejects(verifyPackage(extracted, 'claude', 'v0.2.9'), /extra=.*hooks\/hooks.json/);
+  await assert.rejects(verifyPackage(extracted, 'claude', 'v0.2.12'), /extra=.*hooks\/hooks.json/);
 });
 
 test('convention longer than the Claude injection limit fails release staging', async (t) => {
@@ -125,7 +125,7 @@ test('convention longer than the Claude injection limit fails release staging', 
   const source = path.join(dir, 'viewer');
   await cp(viewer, source, { recursive: true });
   await writeFile(path.join(source, 'SYSTEM.md'), 'a'.repeat(10_001));
-  await assert.rejects(stageRelease(source, path.join(dir, 'stage'), 'v0.2.9'), /exceeds 10000 characters/);
+  await assert.rejects(stageRelease(source, path.join(dir, 'stage'), 'v0.2.12'), /exceeds 10000 characters/);
 });
 
 test('root marketplace points archive source at the pipeline Claude artifact over https', async () => {

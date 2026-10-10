@@ -77,3 +77,51 @@ test('port conflict still emits convention and diagnoses only on stderr', async 
   assert.equal(JSON.parse(result.stdout).hookSpecificOutput.additionalContext, await readFile(path.join(plugin, 'SYSTEM.md'), 'utf8'));
   assert.deepEqual(await readdir(dir).then((items) => items.filter((item) => item === 'absent')), []);
 });
+
+test('Claude hooks config declares three events with plugin-root script references', async (t) => {
+  const { plugin } = await scope(t);
+  const manifest = JSON.parse(await readFile(path.join(plugin, '.claude-plugin', 'plugin.json'), 'utf8'));
+  const config = JSON.parse(await readFile(path.join(plugin, 'hooks', 'claude-hooks.json'), 'utf8'));
+  assert.equal(manifest.name, 'kanban');
+  assert.equal(manifest.hooks, './hooks/claude-hooks.json');
+  assert.deepEqual(Object.keys(config.hooks).sort(), ['PostToolUse', 'SessionStart', 'UserPromptSubmit']);
+  const handlers = Object.values(config.hooks).flatMap((groups) => groups.flatMap((group) => group.hooks));
+  for (const handler of handlers) {
+    assert.equal(handler.command, 'node');
+    assert.ok(handler.args[0].startsWith('${CLAUDE_PLUGIN_ROOT}/'));
+    assert.ok(!JSON.stringify(handler).includes('${PLUGIN_ROOT}'));
+    assert.ok((await stat(path.join(plugin, handler.args[0].replace('${CLAUDE_PLUGIN_ROOT}/', '')))).isFile());
+  }
+  assert.equal(config.hooks.SessionStart[0].matcher, undefined);
+  assert.equal(config.hooks.UserPromptSubmit[0].hooks[0].async, true);
+  assert.equal(config.hooks.PostToolUse[0].hooks[0].async, true);
+});
+
+for (const sourceType of ['clear', 'compact', 'fork']) {
+  test(`Claude SessionStart ${sourceType} emits convention without ensuring the service`, async (t) => {
+    const { plugin, env, dir, port } = await scope(t);
+    const project = path.join(dir, 'project');
+    await mkdir(project, { recursive: true });
+    const script = path.join(plugin, 'server', 'codex-hook.mjs');
+    const result = await capture(process.execPath, [script, 'start'], env, { hook_event_name: 'SessionStart', source: sourceType, cwd: project });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.additionalContext, await readFile(path.join(plugin, 'SYSTEM.md'), 'utf8'));
+    await assert.rejects(fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(500) }));
+    assert.deepEqual(await readdir(project), []);
+  });
+}
+
+test('Claude PostToolUse running control status is skipped as control activity', async (t) => {
+  const { plugin, env, dir, port } = await scope(t);
+  const project = path.join(dir, 'project');
+  await mkdir(project, { recursive: true });
+  const script = path.join(plugin, 'server', 'codex-hook.mjs');
+  const control = { hook_event_name: 'PostToolUse', tool_name: 'Bash', cwd: project, tool_input: { command: `node "${path.join(plugin, 'server', 'control.mjs')}" status` } };
+  const result = await capture(process.execPath, [script, 'activity'], env, control);
+  assert.equal(result.code, 0, result.stderr);
+  await assert.rejects(fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(500) }));
+  assert.deepEqual(await readdir(project), []);
+  const { isDiagnosticOrControl } = await import(new URL('../server/activity.mjs', import.meta.url));
+  assert.equal(isDiagnosticOrControl(control), true);
+  assert.equal(isDiagnosticOrControl({ hook_event_name: 'PostToolUse', tool_input: { command: 'npm test --prefix viewer' } }), false);
+});

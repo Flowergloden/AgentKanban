@@ -1,0 +1,16 @@
+{
+  "name": "agent-kanban",
+  "owner": {
+    "name": "Flowergloden"
+  },
+  "plugins": [
+    {
+      "name": "kanban",
+      "description": "线程看板约定、可视化与本地共享服务",
+      "source": {
+        "source": "archive",
+        "url": "https://github.com/Flowergloden/AgentKanban/releases/latest/download/kanban-claude-plugin.zip"
+      }
+    }
+  ]
+}

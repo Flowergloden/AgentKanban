@@ -5,7 +5,7 @@ description: 查询或控制线程看板本地共享服务的自动/常驻模式
 
 # 看板服务控制
 
-本技能目录的 `../../server/control.mjs` 是统一入口；从本文件位置相对定位，勿使用 Kimi 安装路径。需要 Node.js。操作影响所有项目：
+本技能目录的 `../../server/control.mjs` 是统一入口；从本文件位置相对定位，不依赖任何宿主的安装路径。需要 Node.js。操作影响所有项目：
 
 ```powershell
 node "<本技能目录>/../../server/control.mjs" start --persistent

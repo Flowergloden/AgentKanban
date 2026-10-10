@@ -15,11 +15,16 @@ const web = [
 ].map((name) => `web/${name}`);
 const skills = ['kanban-open', 'kanban-service'].map((name) => `skills/${name}/SKILL.md`);
 const shared = ['SYSTEM.md', 'service.json', ...server, ...web, ...skills];
+const hosts = ['kimi', 'codex', 'claude'];
+const manifestFor = { kimi: 'kimi.plugin.json', codex: '.codex-plugin/plugin.json', claude: '.claude-plugin/plugin.json' };
+const systemPromptLimit = 10_000;
 export const filesFor = (host) => host === 'kimi'
   ? [...shared, 'kimi.plugin.json', 'server/ensure.mjs', 'server/heartbeat.mjs', 'commands/open.md']
   : host === 'codex'
     ? [...shared, '.codex-plugin/plugin.json', 'hooks/hooks.json', 'server/codex-hook.mjs']
-    : (() => { throw new Error(`unknown host ${host}`); })();
+    : host === 'claude'
+      ? [...shared, '.claude-plugin/plugin.json', 'hooks/claude-hooks.json', 'server/codex-hook.mjs']
+      : (() => { throw new Error(`unknown host ${host}`); })();
 
 async function json(file) { return JSON.parse(await fs.readFile(file, 'utf8')); }
 function assert(condition, message) { if (!condition) throw new Error(message); }
@@ -53,13 +58,15 @@ export async function verifyPackage(root, host, tag) {
   assert(JSON.stringify(actual) === JSON.stringify([...included].sort()),
     `${host} package files differ: missing=${included.filter((name) => !actual.includes(name)).join(',')} extra=${actual.filter((name) => !included.includes(name)).join(',')}`);
   const service = await json(path.join(root, 'service.json'));
-  const manifest = await json(path.join(root, host === 'kimi' ? 'kimi.plugin.json' : '.codex-plugin/plugin.json'));
+  const manifest = await json(path.join(root, manifestFor[host]));
   assert(manifest.version === tag.slice(1) && service.version === tag.slice(1),
     `${host}: tag/manifest/service version mismatch`);
   assert(Number.isSafeInteger(service.protocolVersion) && service.protocolVersion > 0,
     'protocolVersion must be an independent positive integer');
   assert(manifest.name === 'kanban', `${host}: wrong plugin name`);
   await validateRuntimeImports(root, included);
+  const system = await fs.readFile(path.join(root, 'SYSTEM.md'), 'utf8');
+  assert(system.length <= systemPromptLimit, `SYSTEM.md exceeds ${systemPromptLimit} characters: ${system.length}`);
   if (host === 'kimi') {
     for (const ref of [manifest.systemPromptPath, manifest.commands, manifest.skills]) {
       assert(typeof ref === 'string' && ref.startsWith('./'), `invalid Kimi manifest reference ${ref}`);
@@ -69,7 +76,7 @@ export async function verifyPackage(root, host, tag) {
       const target = hook.command.match(/\.\/server\/([\w-]+\.mjs)/)?.[0];
       assert(target && included.includes(target.slice(2)), `missing Kimi hook script ${hook.command}`);
     }
-  } else {
+  } else if (host === 'codex') {
     for (const ref of [manifest.skills, manifest.hooks]) {
       assert(typeof ref === 'string' && ref.startsWith('./'), `invalid Codex manifest reference ${ref}`);
       await fs.stat(path.join(root, ref));
@@ -81,6 +88,20 @@ export async function verifyPackage(root, host, tag) {
     }
     for (const event of ['SessionStart', 'UserPromptSubmit', 'PostToolUse'])
       assert(Array.isArray(hooks.hooks[event]) && hooks.hooks[event].length > 0, `missing Codex ${event} hook`);
+  } else {
+    assert(typeof manifest.hooks === 'string' && manifest.hooks.startsWith('./'), `invalid Claude manifest reference ${manifest.hooks}`);
+    await fs.stat(path.join(root, manifest.hooks));
+    assert(!actual.includes('hooks/hooks.json') && !actual.some((name) => name.startsWith('commands/')),
+      'Claude package must not contain Codex hooks or Kimi commands');
+    const hooks = await json(path.join(root, manifest.hooks));
+    assert(!JSON.stringify(hooks).includes('${PLUGIN_ROOT}'), 'Claude hooks must not use ${PLUGIN_ROOT}');
+    for (const groups of Object.values(hooks.hooks)) for (const group of groups) for (const hook of group.hooks) {
+      assert(hook.command === 'node' && Array.isArray(hook.args), `Claude hook must use command node with args: ${JSON.stringify(hook)}`);
+      const target = hook.args[0]?.match(/^\$\{CLAUDE_PLUGIN_ROOT\}\/server\/([\w-]+\.mjs)$/)?.[1];
+      assert(target && included.includes(`server/${target}`), `missing Claude hook script ${hook.args[0]}`);
+    }
+    for (const event of ['SessionStart', 'UserPromptSubmit', 'PostToolUse'])
+      assert(Array.isArray(hooks.hooks[event]) && hooks.hooks[event].length > 0, `missing Claude ${event} hook`);
   }
   for (const skill of skills) {
     const content = await fs.readFile(path.join(root, skill), 'utf8');
@@ -92,15 +113,16 @@ export async function verifyPackage(root, host, tag) {
 
 export async function stageRelease(source, dest, tag) {
   // Fail before creating release artifacts on mismatched versions or missing source resources.
-  const kimi = await json(path.join(source, 'kimi.plugin.json'));
-  const codex = await json(path.join(source, '.codex-plugin/plugin.json'));
+  const kimi = await json(path.join(source, manifestFor.kimi));
+  const codex = await json(path.join(source, manifestFor.codex));
+  const claude = await json(path.join(source, manifestFor.claude));
   const service = await json(path.join(source, 'service.json'));
-  assert(/^v\d+\.\d+\.\d+$/.test(tag) && [kimi.version, codex.version, service.version].every((v) => v === tag.slice(1)),
-    'tag/Kimi/Codex/service version mismatch');
-  for (const host of ['kimi', 'codex']) for (const file of filesFor(host))
+  assert(/^v\d+\.\d+\.\d+$/.test(tag) && [kimi.version, codex.version, claude.version, service.version].every((v) => v === tag.slice(1)),
+    'tag/Kimi/Codex/Claude/service version mismatch');
+  for (const host of hosts) for (const file of filesFor(host))
     assert((await fs.stat(path.join(source, file))).isFile(), `source missing ${file}`);
   await fs.mkdir(dest, { recursive: true });
-  for (const host of ['kimi', 'codex']) {
+  for (const host of hosts) {
     const target = path.join(dest, host);
     await fs.mkdir(target); // refuse to overwrite an existing staging tree
     for (const file of filesFor(host)) {
@@ -116,7 +138,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     if (action === 'stage') await stageRelease(source, target, tag);
     else if (action === 'verify') {
-      for (const host of ['kimi', 'codex'])
+      for (const host of hosts)
         console.log(JSON.stringify(await verifyPackage(path.join(target, host), host, tag)));
     } else throw new Error('usage: node scripts/release.mjs stage|verify <vX.Y.Z> <directory> [viewer-source]');
   } catch (error) { console.error(error.message); process.exitCode = 1; }

@@ -14,19 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 校验三个版本并白名单暂存双宿主文件
+      - name: 校验三个版本并白名单暂存三宿主文件
         run: node scripts/release.mjs stage "$GITHUB_REF_NAME" "$RUNNER_TEMP/agent-kanban-stage"
 
-      - name: 构建双宿主 ZIP（保留隐藏清单）
+      - name: 构建三宿主 ZIP（保留隐藏清单）
         run: |
           (cd "$RUNNER_TEMP/agent-kanban-stage/kimi" && zip -q -r "$GITHUB_WORKSPACE/kanban-plugin.zip" .)
           (cd "$RUNNER_TEMP/agent-kanban-stage/codex" && zip -q -r "$GITHUB_WORKSPACE/kanban-codex-plugin.zip" .)
+          (cd "$RUNNER_TEMP/agent-kanban-stage/claude" && zip -q -r "$GITHUB_WORKSPACE/kanban-claude-plugin.zip" .)
 
-      - name: 上传前解包并校验完整性
+      - name: 上传前解包并校验三宿主完整性
         run: |
-          mkdir -p "$RUNNER_TEMP/agent-kanban-unpacked/kimi" "$RUNNER_TEMP/agent-kanban-unpacked/codex"
+          mkdir -p "$RUNNER_TEMP/agent-kanban-unpacked/kimi" "$RUNNER_TEMP/agent-kanban-unpacked/codex" "$RUNNER_TEMP/agent-kanban-unpacked/claude"
           unzip -q kanban-plugin.zip -d "$RUNNER_TEMP/agent-kanban-unpacked/kimi"
           unzip -q kanban-codex-plugin.zip -d "$RUNNER_TEMP/agent-kanban-unpacked/codex"
+          unzip -q kanban-claude-plugin.zip -d "$RUNNER_TEMP/agent-kanban-unpacked/claude"
           node scripts/release.mjs verify "$GITHUB_REF_NAME" "$RUNNER_TEMP/agent-kanban-unpacked"
 
       - name: 上传 Release 附件
@@ -36,5 +38,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
-            kanban-plugin.zip kanban-codex-plugin.zip \
-            || gh release upload "$GITHUB_REF_NAME" kanban-plugin.zip kanban-codex-plugin.zip --clobber
+            kanban-plugin.zip kanban-codex-plugin.zip kanban-claude-plugin.zip \
+            || gh release upload "$GITHUB_REF_NAME" kanban-plugin.zip kanban-codex-plugin.zip kanban-claude-plugin.zip --clobber

@@ -21,7 +21,7 @@
 
 ## 新会话验证
 
-- **有 `kanban/` 的项目**：新会话开始时应注入 SYSTEM.md 中的四条约定；`kanban-open` 与 `kanban-service` 两个技能可被发现；运行 `kanban-open` 后浏览器打开当前项目的看板。
+- **有 `kanban/` 的项目**：新会话开始时应注入 SYSTEM.md 中的四条约定；`kanban-open`、`kanban-service` 与 `kanban-compress` 三个技能可被发现；运行 `kanban-open` 后浏览器打开当前项目的看板。
 - **没有 `kanban/` 的项目**：约定只在看板项目中生效，Agent 不应创建 `kanban/` 结构，也不执行看板动作。
 
 `clear`、`compact`、`fork` 来源的会话同样会注入约定，但不会额外拉起服务；`startup` 与 `resume` 才会确保服务运行。

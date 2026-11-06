@@ -13,7 +13,7 @@
 1. 在 Codex 桌面端打开此仓库作为项目。仓库 marketplace 文件已纳入检出，不需写入个人 `~/.agents/plugins/marketplace.json` 或手改全局配置。重启桌面端，使仓库 marketplace 刷新。
 2. 在插件目录中选 `AgentKanban` 仓库源，检查 `kanban` 的来源是该检出的 `viewer/`，再安装、启用。若目录里没有该源，先核对仓库根、受信项目与 marketplace 路径；不要误用 Kimi 包。
 3. **先审核再信任 hooks**：核对 `SessionStart`、`UserPromptSubmit`、`PostToolUse` 命令引用 `PLUGIN_ROOT/server/codex-hook.mjs`，确认实际安装目录下的脚本与内容可信。未信任时 hooks 会被跳过，不能声称服务自动启动或 SYSTEM.md 约定已注入。更新 hook 定义后须重新审核。
-4. 新建会话验证 `kanban-open` 与 `kanban-service` 可发现，并在有 `kanban/` 的项目确认四条约定和 SessionStart 校准；另用无 `kanban/` 项目确认不创建项目结构、不执行约定。恢复会话及压缩后也要实测约定。安装后已有会话未必重新加载技能，应开启新会话。
+4. 新建会话验证 `kanban-open`、`kanban-service` 与 `kanban-compress` 可发现，并在有 `kanban/` 的项目确认四条约定和 SessionStart 校准；另用无 `kanban/` 项目确认不创建项目结构、不执行约定。恢复会话及压缩后也要实测约定。安装后已有会话未必重新加载技能，应开启新会话。
 5. 安装源路径为本检出的 `<仓库根>\viewer`；隔离 `CODEX_HOME` 的 CLI 实测安装复制路径为 `<CODEX_HOME>\plugins\cache\agent-kanban\kanban\0.2.4`（本次临时根：`C:\Users\ADMINI~1\AppData\Local\Temp\kanban-cli-31e37e20013a4abc9210be392ddc4c90`）。桌面端的实际复制路径仍须以本机安装界面和文件为准，不能把 CLI 的隔离路径冒充桌面端实测。
 
 ## Codex CLI 安装与信任

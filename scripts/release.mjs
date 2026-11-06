@@ -13,7 +13,7 @@ const web = [
   'views-board.js', 'views-table.js', 'visibility.js',
   'vendor/preact-standalone.module.js',
 ].map((name) => `web/${name}`);
-const skills = ['kanban-open', 'kanban-service'].map((name) => `skills/${name}/SKILL.md`);
+const skills = ['kanban-open', 'kanban-service', 'kanban-compress'].map((name) => `skills/${name}/SKILL.md`);
 const shared = ['SYSTEM.md', 'service.json', ...server, ...web, ...skills];
 const hosts = ['kimi', 'codex', 'claude'];
 const manifestFor = { kimi: 'kimi.plugin.json', codex: '.codex-plugin/plugin.json', claude: '.claude-plugin/plugin.json' };

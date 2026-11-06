@@ -16,7 +16,7 @@ export async function freePort() {
   return port;
 }
 
-export async function withServer(t, body, { isolatedCopy = false } = {}) {
+export async function withServer(t, body, { isolatedCopy = false, env: extraEnv = {} } = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'kanban-server-test-'));
   let port = await freePort();
   while (port === 4731) port = await freePort();
@@ -28,7 +28,7 @@ export async function withServer(t, body, { isolatedCopy = false } = {}) {
       await copyFile(path.join(viewer, 'server', file), path.join(root, 'server', file));
     await copyFile(path.join(viewer, 'service.json'), path.join(root, 'service.json'));
   }
-  const childEnv = { ...process.env, AGENT_KANBAN_HOME: path.join(dir, 'data'), KIMI_CODE_HOME: path.join(dir, 'old'), AGENT_KANBAN_PORT: String(port) };
+  const childEnv = { ...process.env, AGENT_KANBAN_HOME: path.join(dir, 'data'), KIMI_CODE_HOME: path.join(dir, 'old'), AGENT_KANBAN_PORT: String(port), ...extraEnv };
   const child = spawn(process.execPath, [path.join(root, 'server', 'server.mjs')], {
     cwd: os.tmpdir(), stdio: ['ignore', 'ignore', 'pipe'],
     env: childEnv,

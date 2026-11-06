@@ -1,48 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, chmod, rm, access } from 'node:fs/promises';
-import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import * as vcs from '../server/vcs.mjs';
 import * as threads from '../server/threads.mjs';
+import { canonicalRoot } from '../server/registry.mjs';
 import { withServer } from './fixture.mjs';
-
-const shim = fileURLToPath(new URL('./p4-shim.mjs', import.meta.url));
-
-// 在当前进程启用假 p4（AGENT_KANBAN_P4_SHIM 由 vcs.mjs 惰性读取）。
-// 规格写入临时文件并经 P4SHIM_SPEC_FILE 传递：shim 每次调用重新读文件，
-// 因此服务子进程启动后测试仍可改行为；返回 setSpec 用于中途改规格。
-function useShim(t, spec = {}, logFile = null) {
-  const prev = {
-    AGENT_KANBAN_P4_SHIM: process.env.AGENT_KANBAN_P4_SHIM,
-    P4SHIM_SPEC_FILE: process.env.P4SHIM_SPEC_FILE,
-    P4SHIM_LOG: process.env.P4SHIM_LOG,
-  };
-  const specFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kanban-p4spec-')), 'spec.json');
-  writeFileSync(specFile, JSON.stringify(spec));
-  process.env.AGENT_KANBAN_P4_SHIM = shim;
-  process.env.P4SHIM_SPEC_FILE = specFile;
-  if (logFile) process.env.P4SHIM_LOG = logFile;
-  else delete process.env.P4SHIM_LOG;
-  t.after(() => {
-    for (const [key, value] of Object.entries(prev)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  });
-  return (next) => writeFileSync(specFile, JSON.stringify(next));
-}
-
-async function shimLog(logFile) {
-  try {
-    const raw = await readFile(logFile, 'utf8');
-    return raw.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  } catch {
-    return [];
-  }
-}
+import { useShim, shimLog } from './shim.mjs';
 
 async function tempRoot(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'kanban-vcs-test-'));
@@ -337,45 +302,52 @@ test('活跃线程重命名时 kanban/current 同步写走 checkout 包装', asy
 
 // ---- 3.2 / 5.1 / 5.2 服务端接线 ----
 
-test('注册与 init 执行检测并刷新注册表缓存；/api/projects 携带 vcs；/api/vcs/add 越界拒绝', async (t) => {
+test('自动发现不检测；确认与已注册加载刷新缓存；/api/projects 携带 vcs；写接口门控与越界拒绝', async (t) => {
   const root = await tempRoot(t);
-  const normRoot = root.replace(/\\/g, '/'); // 注册表与接口均返回归一化 root
+  const normRoot = canonicalRoot(root); // 注册表与接口均返回归一化 root
   const logFile = path.join(root, 'server-shim.log');
   const setSpec = useShim(t, { mapped: true }, logFile);
 
   await withServer(t, async ({ url, dir }) => {
     const post = (p, body) => fetch(url + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const getThreads = () => fetch(`${url}/api/threads?root=${encodeURIComponent(normRoot)}`);
+    const registry = async () => JSON.parse(await readFile(path.join(dir, 'data', 'registry.json'), 'utf8'));
 
-    // 注册即检测（shim 受管）并写入注册表
+    // 自动发现不触发 P4 检测
     let res = await post('/api/register', { root });
     assert.equal(res.status, 200);
-    let registry = JSON.parse(await readFile(path.join(dir, 'data', 'registry.json'), 'utf8'));
-    assert.equal(registry.projects[normRoot].vcs.type, 'p4');
-    assert.equal(registry.projects[normRoot].lastSeen > 0, true);
+    assert.equal((await registry()).projects[normRoot].vcs, undefined);
+    assert.deepEqual((await shimLog(logFile)).map((c) => c[0]), []);
+
+    // 显式确认即检测（shim 受管）并写入注册表
+    res = await post('/api/projects/confirm', { root });
+    assert.equal(res.status, 200);
+    assert.equal((await registry()).projects[normRoot].vcs.type, 'p4');
+    assert.equal((await registry()).projects[normRoot].lastSeen > 0, true);
 
     // 项目列表携带 vcs 标识
     const projects = await (await fetch(url + '/api/projects')).json();
     assert.equal(projects.find((p) => p.root === normRoot).vcs.type, 'p4');
 
-    // 映射变化后 init 刷新缓存
+    // 已注册项目页面加载（threads）刷新缓存：映射变化后更新
     setSpec({ mapped: false });
-    res = await post('/api/init', { root });
+    res = await getThreads();
     assert.equal(res.status, 200);
-    registry = JSON.parse(await readFile(path.join(dir, 'data', 'registry.json'), 'utf8'));
-    assert.deepEqual(registry.projects[normRoot].vcs.type, null);
+    assert.deepEqual((await registry()).projects[normRoot].vcs.type, null);
 
     // 服务器不可达：不报错、不覆写既有缓存
     setSpec({ offline: true });
-    res = await post('/api/init', { root });
+    res = await getThreads();
     assert.equal(res.status, 200);
-    registry = JSON.parse(await readFile(path.join(dir, 'data', 'registry.json'), 'utf8'));
-    assert.deepEqual(registry.projects[normRoot].vcs.type, null);
+    assert.deepEqual((await registry()).projects[normRoot].vcs.type, null);
     setSpec({ mapped: true });
 
-    // init 响应携带 created（结构缺失时惰性补齐）
+    // init 保持幂等并刷新检测，响应携带 created（结构缺失时惰性补齐）
     const initRes = await post('/api/init', { root });
     const initBody = await initRes.json();
     assert.ok(Array.isArray(initBody.created));
+    const again = await (await post('/api/init', { root })).json();
+    assert.deepEqual(again.created, []);
 
     // /api/vcs/add：kanban/ 子树内成功
     const innerFile = path.join(root, 'kanban', 'probe.txt');
@@ -390,13 +362,13 @@ test('注册与 init 执行检测并刷新注册表缓存；/api/projects 携带
     assert.match((await res.json()).error, /越界/);
     assert.equal((await shimLog(logFile)).length, callsBefore); // 之后无任何 p4 调用
 
-    // 非 P4 受管项目：add 拒绝
+    // 未登记路径：写接口门控拒绝（不动项目记录、不执行 p4）
     const plainRoot = await tempRoot(t);
     res = await post('/api/vcs/add', { root: plainRoot, files: ['kanban/x.txt'] });
-    assert.equal(res.status, 409);
+    assert.equal(res.status, 403);
     const outsiderRoot = path.join(root, 'outsider').replace(/\\/g, '/');
     res = await post('/api/vcs/add', { root: outsiderRoot, files: ['kanban/x.txt'] });
-    assert.equal(res.status, 409);
+    assert.equal(res.status, 403);
   });
 });
 
@@ -407,9 +379,10 @@ test('非 P4 项目写接口零 p4 调用（服务端全链路）', async (t) =>
 
   await withServer(t, async ({ url }) => {
     const post = (p, body) => fetch(url + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    await post('/api/register', { root }); // 首次检测为受管：-V, where
+    await post('/api/register', { root });
+    await post('/api/projects/confirm', { root }); // 首次检测为受管：-V, where
     setSpec({ mapped: false });
-    await post('/api/init', { root });     // 刷新为非 P4：-V, where
+    await fetch(`${url}/api/threads?root=${encodeURIComponent(canonicalRoot(root))}`); // 已注册加载刷新为非 P4：-V, where
     const callsAfterInit = (await shimLog(logFile)).map((c) => c[0]);
     assert.deepEqual(callsAfterInit, ['-V', 'where', '-V', 'where']);
 

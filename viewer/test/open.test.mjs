@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { freePort } from './fixture.mjs';
+import { freePort, withServer } from './fixture.mjs';
 
 const exec = promisify(execFile);
 const viewer = fileURLToPath(new URL('..', import.meta.url));
@@ -55,4 +55,63 @@ test('PowerShell environment transport preserves percent-encoded Windows URL', a
   ], { env: { ...process.env, AGENT_KANBAN_OPEN_URL: original } });
   assert.equal(result.stdout, original);
   assert.match(original, /%3A|%5C/);
+});
+
+test('explicit open confirms project as registered; ordinary control start only discovers', async (t) => {
+  await withServer(t, async ({ url, dir, childEnv }) => {
+    const env = { ...childEnv, AGENT_KANBAN_OPEN_DRY_RUN: '1' };
+    const open = path.join(viewer, 'server', 'open.mjs');
+    const root = path.join(dir, '中文 项目');
+    const opened = await exec(process.execPath, [open, root], { env });
+    assert.equal(new URL(opened.stdout.trim()).searchParams.get('root'), root);
+    const projects = await (await fetch(url + '/api/projects')).json();
+    assert.equal(projects.length, 1);
+    assert.equal(projects[0].state, 'registered');
+    assert.equal(projects[0].root, root.replace(/\\/g, '/').toLowerCase());
+    // 普通入口（控制启动）仍只自动发现：新路径保持待确认
+    const plain = path.join(dir, 'plain project');
+    await exec(process.execPath, [path.join(viewer, 'server', 'control.mjs'), 'start', '--root', plain], { env });
+    const after = await (await fetch(url + '/api/projects')).json();
+    assert.equal(after.length, 2);
+    assert.equal(after.find((p) => p.root === plain.replace(/\\/g, '/').toLowerCase()).state, 'pending');
+  });
+});
+
+test('new open entry degrades against legacy service: reuses it and registers instead of confirming', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'kanban-open-legacy-'));
+  const port = await freePort();
+  const env = { ...process.env, AGENT_KANBAN_PORT: String(port), AGENT_KANBAN_HOME: path.join(dir, 'data'), AGENT_KANBAN_OPEN_DRY_RUN: '1' };
+  let registerRequests = 0; let confirmRequests = 0; let shutdownRequests = 0;
+  const legacy = http.createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/api/health') return res.end(JSON.stringify({ ok: true, name: 'kanban-viewer', version: '0.2.13', mode: 'auto', pid: 4242 }));
+    if (req.url === '/api/register') { registerRequests++; return res.end('{"ok":true}'); }
+    if (req.url === '/api/projects/confirm') { confirmRequests++; return res.end('{"ok":true}'); }
+    if (req.url === '/api/shutdown') { shutdownRequests++; return res.end('{"ok":true}'); }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise((resolve) => legacy.listen(port, '127.0.0.1', resolve));
+  t.after(async () => { await new Promise((resolve) => legacy.close(resolve)); await rm(dir, { recursive: true, force: true }); });
+  const root = path.join(dir, 'legacy proj');
+  const result = await exec(process.execPath, [path.join(viewer, 'server', 'open.mjs'), root], { env });
+  assert.equal(new URL(result.stdout.trim()).searchParams.get('root'), root);
+  assert.equal(registerRequests, 1); // 降级为原有注册
+  assert.equal(confirmRequests, 0); // 不误报确认成功
+  assert.equal(shutdownRequests, 0); // 复用服务不替换，模式保留
+});
+
+test('confirm failure does not open browser or claim success', async (t) => {
+  await withServer(t, async ({ dir, childEnv }) => {
+    const env = { ...childEnv, AGENT_KANBAN_OPEN_DRY_RUN: '1' };
+    const root = path.join(dir, 'unlucky');
+    await assert.rejects(
+      exec(process.execPath, [path.join(viewer, 'server', 'open.mjs'), root], { env }),
+      (error) => {
+        assert.equal(error.stdout, '');
+        assert.match(error.stderr, /项目确认失败/);
+        return true;
+      },
+    );
+  }, { env: { AGENT_KANBAN_FAIL_REGISTRY_WRITE: '1' } });
 });

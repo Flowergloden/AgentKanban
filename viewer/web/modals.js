@@ -211,3 +211,108 @@ export function DeleteModal({ thread, onClose, onDeleted }) {
     </div>
   `;
 }
+
+const PROJECT_SECTIONS = [
+  { key: 'pending', title: '待确认', hint: '自动发现的新项目；确认后进入已注册列表，忽略则持久抑制自动发现' },
+  { key: 'registered', title: '已注册', hint: '主项目切换列表只展示这些项目' },
+  { key: 'ignored', title: '已忽略', hint: '自动发现不再登记这些项目；取消忽略可恢复为已注册' },
+];
+
+// 项目管理：按状态分区提供新增、确认、忽略、取消忽略与删除；操作失败保留真实状态并显示错误
+export function ManageModal({ projects, currentRoot, onClose, onManaged }) {
+  const [error, setError] = useState('');
+  const [busyKey, setBusyKey] = useState('');
+  const [pendingDelete, setPendingDelete] = useState('');
+  const [path, setPath] = useState('');
+
+  const run = async (key, action) => {
+    if (busyKey) return;
+    setBusyKey(key);
+    setError('');
+    try {
+      await action();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const act = (key, action, op, opRoot) => () => run(key, async () => {
+    await action();
+    setPendingDelete('');
+    await onManaged(op, opRoot);
+  });
+
+  const add = () => run('add', async () => {
+    const value = path.trim();
+    if (!value) {
+      setError('请输入项目根绝对路径');
+      return;
+    }
+    await api.addProject(value);
+    setPath('');
+    await onManaged('add');
+  });
+
+  const rowButtons = (p) => {
+    const key = p.root;
+    const busy = busyKey === key;
+    if (pendingDelete === key) {
+      return html`
+        <button class="danger" disabled=${busy} onClick=${act(key, () => api.deleteProject(p.root), 'delete', p.root)}>确认删除</button>
+        <button disabled=${busy} onClick=${() => setPendingDelete('')}>取消</button>
+      `;
+    }
+    return html`
+      ${p.state === 'pending' && html`<button class="primary" disabled=${busy} onClick=${act(key, () => api.confirmProject(p.root), 'confirm', p.root)}>确认</button>`}
+      ${p.state === 'ignored' && html`<button class="primary" disabled=${busy} onClick=${act(key, () => api.confirmProject(p.root), 'confirm', p.root)}>取消忽略</button>`}
+      ${p.state !== 'ignored' && html`<button disabled=${busy} onClick=${act(key, () => api.ignoreProject(p.root), 'ignore', p.root)}>忽略</button>`}
+      <button class="danger" disabled=${busy} onClick=${() => setPendingDelete(key)}>删除</button>
+    `;
+  };
+
+  const normCurrent = String(currentRoot || '').toLowerCase();
+  return html`
+    <div class="modal-mask" onClick=${(e) => e.target === e.currentTarget && !busyKey && onClose()}>
+      <div class="modal modal--wide">
+        <h3>项目管理</h3>
+        <div class="hint" style="margin-top:0">
+          删除仅移除注册记录，项目文件与 <code>kanban/</code> 保持原样，之后有会话活动只会重新发现为待确认；
+          忽略则持久抑制自动发现。两者都不会动项目目录。
+        </div>
+        ${PROJECT_SECTIONS.map(({ key, title, hint }) => {
+          const rows = projects.filter((p) => p.state === key);
+          return html`
+            <div class="proj-section" key=${key}>
+              <h4>${title}（${rows.length}）</h4>
+              <div class="hint" style="margin:0 0 4px">${hint}</div>
+              ${rows.length === 0 ? html`<div class="hint">（无）</div>` : rows.map((p) => html`
+                <div class="proj-row" key=${p.root}>
+                  <span class="proj-root">
+                    ${p.root}
+                    ${p.root.toLowerCase() === normCurrent ? '〔当前〕' : ''}
+                    ${p.vcs?.type === 'p4' ? '〔P4〕' : ''}
+                  </span>
+                  ${rowButtons(p)}
+                </div>
+              `)}
+            </div>
+          `;
+        })}
+        <div class="proj-section">
+          <h4>手动新增</h4>
+          <div class="hint" style="margin:0 0 4px">输入现存目录的绝对路径，新增后直接成为已注册项目；不会自动初始化看板，也不切换当前项目。</div>
+          <div class="proj-row">
+            <input class="proj-add-input" value=${path} onInput=${(e) => setPath(e.target.value)} placeholder="例如：D:\work\my-project" />
+            <button class="primary" disabled=${busyKey === 'add'} onClick=${add}>新增为已注册</button>
+          </div>
+        </div>
+        ${error && html`<div class="modal-error">操作失败：${error}</div>`}
+        <div class="modal-actions">
+          <button onClick=${onClose} disabled=${!!busyKey}>关闭</button>
+        </div>
+      </div>
+    </div>
+  `;
+}

@@ -62,7 +62,7 @@ async function launch(mode) {
   return checkService(ready);
 }
 
-export async function ensure({ root, persistent = false } = {}) {
+export async function ensure({ root, persistent = false, confirm = false } = {}) {
   const release = await acquireLock();
   let service;
   let legacy = false;
@@ -90,10 +90,13 @@ export async function ensure({ root, persistent = false } = {}) {
       }
     }
     if (root) {
-      const result = await request('/api/register', {
+      // 显式打开（confirm）即确认注册；旧协议服务无确认接口，降级为原有注册语义
+      const route = confirm && !legacy ? '/api/projects/confirm' : '/api/register';
+      const result = await request(route, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root }),
       });
-      if (result.status !== 200 || result.data?.ok !== true) throw new Error('项目注册失败');
+      if (result.status !== 200 || result.data?.ok !== true)
+        throw new Error(confirm && !legacy ? '项目确认失败' : '项目注册失败');
     }
   } finally { await release(); }
   if (persistent && service.mode !== 'persistent') {

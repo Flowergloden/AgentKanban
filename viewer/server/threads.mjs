@@ -71,6 +71,11 @@ async function pathExists(p) {
   }
 }
 
+// 项目是否已具备 kanban/ 结构（页面据此区分"未初始化"与"已初始化但无线程"）
+export async function hasLayout(root) {
+  return pathExists(kanbanDir(root));
+}
+
 // 幂等补齐 kanban 最小结构，返回 { created }（本次新建的路径列表，相对 root 的 "/" 形式）
 export async function ensureLayout(root) {
   const created = [];

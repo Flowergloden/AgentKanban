@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import * as threads from './threads.mjs';
 import * as vcs from './vcs.mjs';
 import { loadServiceMetadata } from './metadata.mjs';
-import { registryPaths, loadRegistry, saveRegistry, normalizeRoot } from './registry.mjs';
+import { registryPaths, loadRegistry, saveRegistry, canonicalRoot } from './registry.mjs';
 import { createLifecycle, CHECK_INTERVAL_MS } from './lifecycle.mjs';
 import { acquireLock, ownsLock } from './lock.mjs';
 
@@ -15,6 +15,8 @@ const PORT = process.env.AGENT_KANBAN_PORT ? Number(process.env.AGENT_KANBAN_POR
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('invalid AGENT_KANBAN_PORT');
 const SERVICE_NAME = 'kanban-viewer';
 const MAX_BODY_BYTES = 64 * 1024;
+// 测试注入：置 1 时所有注册表持久化失败，用于验证写助手"落盘失败不改内存与磁盘"
+const FAIL_REGISTRY_WRITE = process.env.AGENT_KANBAN_FAIL_REGISTRY_WRITE === '1';
 
 const { registryFile } = registryPaths();
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
@@ -41,11 +43,42 @@ for (const [root, entry] of projects) {
   if (entry.vcs) vcs.setCached(root, entry.vcs.type);
 }
 
-// 更新项目 lastSeen，保留既有 vcs 检测缓存
-function touchProject(root, now = Date.now()) {
-  const key = normalizeRoot(root);
-  const prev = projects.get(key);
-  projects.set(key, { lastSeen: now, ...(prev?.vcs ? { vcs: prev.vcs } : {}) });
+// ---- 注册表写助手：串行队列 + 复制-落盘-提交（原子保存成功后才替换进程内状态）----
+let registryQueue = Promise.resolve();
+function enqueue(task) {
+  const next = registryQueue.then(task);
+  registryQueue = next.catch(() => {});
+  return next;
+}
+
+async function persistRegistry(draft) {
+  if (FAIL_REGISTRY_WRITE) throw new Error('注册表写入失败（测试注入）');
+  await saveRegistry(registryFile, draft);
+}
+
+function commitRegistry(mutate) {
+  return enqueue(async () => {
+    const draft = new Map(projects);
+    const result = await mutate(draft);
+    await persistRegistry(draft);
+    projects.clear();
+    for (const [key, entry] of draft) projects.set(key, entry);
+    return result;
+  });
+}
+
+// 自动发现语义：不存在→建 pending；registered→仅刷新 lastSeen（保留 vcs 缓存）；ignored→不改项目记录
+function discoverProject(key, now = Date.now()) {
+  return commitRegistry((draft) => {
+    const prev = draft.get(key);
+    if (!prev) {
+      draft.set(key, { lastSeen: now, state: 'pending' });
+      return;
+    }
+    if (prev.state === 'registered') {
+      draft.set(key, { lastSeen: now, state: 'registered', ...(prev.vcs ? { vcs: prev.vcs } : {}) });
+    }
+  });
 }
 
 // 受管检测并刷新注册表缓存字段；'unknown'（服务器不可达）保留既有缓存，检测失败按非 P4 处理且不报错
@@ -53,12 +86,12 @@ async function refreshVcs(root) {
   try {
     const type = await vcs.detect(root);
     if (type === 'unknown') return;
-    const key = normalizeRoot(root);
-    const prev = projects.get(key);
-    if (!prev) return;
-    projects.set(key, { lastSeen: prev.lastSeen, vcs: { type, checkedAt: Date.now() } });
-    vcs.setCached(key, type);
-    await saveRegistry(registryFile, projects);
+    await commitRegistry((draft) => {
+      const prev = draft.get(root);
+      if (!prev) return;
+      draft.set(root, { lastSeen: prev.lastSeen, state: prev.state, vcs: { type, checkedAt: Date.now() } });
+    });
+    vcs.setCached(root, type);
   } catch {
     // 检测异常不向用户报错
   }
@@ -93,13 +126,46 @@ async function readJsonBody(req) {
   return raw ? JSON.parse(raw) : {};
 }
 
-function requireRoot(value) {
-  if (typeof value !== 'string' || !value) {
-    const err = new Error('root is required');
+// 新输入统一走规范键：非绝对路径返回 400
+function requireCanonicalRoot(value) {
+  const key = canonicalRoot(value);
+  if (!key) {
+    const err = new Error('root 必须是绝对路径');
     err.status = 400;
     throw err;
   }
-  return value;
+  return key;
+}
+
+// 已注册门控：待确认、已忽略和未登记路径不得执行任何看板写操作
+function requireRegisteredRoot(value) {
+  const key = requireCanonicalRoot(value);
+  const entry = projects.get(key);
+  if (!entry) {
+    const err = new Error('项目未登记：无法执行看板写操作');
+    err.status = 403;
+    throw err;
+  }
+  if (entry.state !== 'registered') {
+    const err = new Error(`项目当前为「${entry.state === 'pending' ? '待确认' : '已忽略'}」状态，无法执行看板写操作`);
+    err.status = 403;
+    throw err;
+  }
+  return key;
+}
+
+// 项目写接口的同源与 JSON 校验（与 /api/service/mode 同模式）
+function guardSameOriginJson(req, res) {
+  const origin = req.headers.origin;
+  if (origin && origin !== `http://${HOST}:${PORT}`) {
+    sendJson(res, 403, { error: 'cross-origin project control rejected' });
+    return false;
+  }
+  if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
+    sendJson(res, 415, { error: 'JSON content type required' });
+    return false;
+  }
+  return true;
 }
 
 function requireId(value) {
@@ -199,13 +265,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // 自动发现：新路径只建 pending，不触发 P4 检测，不推翻人工状态
     if (req.method === 'POST' && url.pathname === '/api/register') {
       const { root } = await readJsonBody(req);
-      if (typeof root !== 'string' || !root) return sendJson(res, 400, { error: 'root is required' });
-      touchProject(root);
-      await saveRegistry(registryFile, projects);
+      const key = requireCanonicalRoot(root);
+      await discoverProject(key);
       lifecycle.activity();
-      await refreshVcs(root);
       return sendJson(res, 200, { ok: true });
     }
 
@@ -216,40 +281,104 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'invalid activity' });
       const now = Date.now();
       if (body.root) {
-        touchProject(body.root, now);
-        await saveRegistry(registryFile, projects);
+        const key = requireCanonicalRoot(body.root);
+        await discoverProject(key, now);
       }
       lifecycle.activity();
       return sendJson(res, 200, { ok: true });
     }
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const list = [...projects.entries()]
-        .map(([root, entry]) => ({ root, lastSeen: entry.lastSeen, ...(entry.vcs ? { vcs: entry.vcs } : {}) }))
+        .map(([root, entry]) => ({ root, lastSeen: entry.lastSeen, state: entry.state, ...(entry.vcs ? { vcs: entry.vcs } : {}) }))
         .sort((a, b) => b.lastSeen - a.lastSeen);
       return sendJson(res, 200, list);
     }
 
+    // 显式确认：新路径、待确认或已忽略项目转为已注册（OpenKanban/Web 确认/取消忽略复用）
+    if (req.method === 'POST' && url.pathname === '/api/projects/confirm') {
+      if (!guardSameOriginJson(req, res)) return;
+      const body = await readJsonBody(req);
+      const key = requireCanonicalRoot(body.root);
+      await commitRegistry((draft) => {
+        const prev = draft.get(key);
+        draft.set(key, { lastSeen: Date.now(), state: 'registered', ...(prev?.vcs ? { vcs: prev.vcs } : {}) });
+      });
+      await refreshVcs(key);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // 手动新增：额外验证现存目录后进入 registered（本身不创建 kanban/）
+    if (req.method === 'POST' && url.pathname === '/api/projects') {
+      if (!guardSameOriginJson(req, res)) return;
+      const body = await readJsonBody(req);
+      const key = requireCanonicalRoot(body.root);
+      const stat = await fs.stat(key).catch(() => null);
+      if (!stat || !stat.isDirectory()) return sendJson(res, 400, { error: `目录不存在：${key}` });
+      await commitRegistry((draft) => {
+        const prev = draft.get(key);
+        draft.set(key, { lastSeen: Date.now(), state: 'registered', ...(prev?.vcs ? { vcs: prev.vcs } : {}) });
+      });
+      await refreshVcs(key);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // 忽略：待确认或已注册项目转为已忽略（持久抑制自动发现）
+    if (req.method === 'POST' && url.pathname === '/api/projects/ignore') {
+      if (!guardSameOriginJson(req, res)) return;
+      const body = await readJsonBody(req);
+      const key = requireCanonicalRoot(body.root);
+      await commitRegistry((draft) => {
+        const prev = draft.get(key);
+        if (!prev) {
+          const err = new Error('项目未登记，无法忽略');
+          err.status = 404;
+          throw err;
+        }
+        draft.set(key, { lastSeen: prev.lastSeen, state: 'ignored', ...(prev.vcs ? { vcs: prev.vcs } : {}) });
+      });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // 删除：按 root 移除任意状态的注册记录，不触碰项目文件；再次自动发现只回到 pending
+    if (req.method === 'DELETE' && url.pathname === '/api/projects') {
+      if (!guardSameOriginJson(req, res)) return;
+      const body = await readJsonBody(req);
+      const key = requireCanonicalRoot(body.root);
+      await commitRegistry((draft) => {
+        if (!draft.delete(key)) {
+          const err = new Error('项目未登记，无法删除');
+          err.status = 404;
+          throw err;
+        }
+      });
+      return sendJson(res, 200, { ok: true });
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/active-thread') {
-      const root = url.searchParams.get('root');
-      if (!root) return sendJson(res, 400, { error: 'root is required' });
+      const root = requireCanonicalRoot(url.searchParams.get('root'));
       return sendJson(res, 200, await queryActiveThread(root));
     }
 
     if (req.method === 'POST' && url.pathname === '/api/init') {
       const body = await readJsonBody(req);
-      const root = requireRoot(body.root);
+      const root = requireRegisteredRoot(body.root);
       const result = await threads.ensureLayout(root);
       await refreshVcs(root);
       return sendJson(res, 200, result);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/threads') {
-      const root = requireRoot(url.searchParams.get('root'));
-      return sendJson(res, 200, await threads.parseList(root));
+      const root = requireCanonicalRoot(url.searchParams.get('root'));
+      // 已注册项目的页面加载/切换：刷新 P4 受管检测缓存
+      if (projects.get(root)?.state === 'registered') await refreshVcs(root);
+      const data = await threads.parseList(root);
+      // 页面据此区分"未初始化"（提供初始化/忽略入口）与"已初始化但无线程"
+      data.layout = await threads.hasLayout(root);
+      return sendJson(res, 200, data);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/thread') {
-      const root = requireRoot(url.searchParams.get('root'));
+      const root = requireCanonicalRoot(url.searchParams.get('root'));
       const id = requireId(url.searchParams.get('id'));
       return sendJson(res, 200, await threads.getThread(root, id));
     }
@@ -257,37 +386,37 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'PUT' && url.pathname === '/api/thread/section') {
       const body = await readJsonBody(req);
       const result = await threads.updateSection(
-        requireRoot(body.root), requireId(body.id), body.section, body.content, body.fingerprint,
+        requireRegisteredRoot(body.root), requireId(body.id), body.section, body.content, body.fingerprint,
       );
       return sendJson(res, 200, result);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/thread/status') {
       const body = await readJsonBody(req);
-      const result = await threads.setStatus(requireRoot(body.root), requireId(body.id), body.status);
+      const result = await threads.setStatus(requireRegisteredRoot(body.root), requireId(body.id), body.status);
       return sendJson(res, 200, result);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/note') {
-      const root = requireRoot(url.searchParams.get('root'));
+      const root = requireCanonicalRoot(url.searchParams.get('root'));
       return sendJson(res, 200, await threads.getNote(root));
     }
 
     if (req.method === 'PUT' && url.pathname === '/api/note') {
       const body = await readJsonBody(req);
-      const result = await threads.updateNote(requireRoot(body.root), body.content, body.fingerprint);
+      const result = await threads.updateNote(requireRegisteredRoot(body.root), body.content, body.fingerprint);
       return sendJson(res, 200, result);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/threads') {
       const body = await readJsonBody(req);
-      const result = await threads.create(requireRoot(body.root), body.title, body.slug, body.goal);
+      const result = await threads.create(requireRegisteredRoot(body.root), body.title, body.slug, body.goal);
       return sendJson(res, 200, result);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/vcs/add') {
       const body = await readJsonBody(req);
-      const root = requireRoot(body.root);
+      const root = requireRegisteredRoot(body.root);
       const files = body.files;
       if (!Array.isArray(files) || files.length === 0 || !files.every((f) => typeof f === 'string' && f)) {
         return sendJson(res, 400, { error: 'files 是非空字符串数组' });
@@ -313,19 +442,19 @@ const server = http.createServer(async (req, res) => {
     const renameMatch = url.pathname.match(/^\/api\/threads\/([\w-]+)\/rename$/);
     if (req.method === 'POST' && renameMatch) {
       const body = await readJsonBody(req);
-      const result = await threads.rename(requireRoot(body.root), renameMatch[1], body.slug);
+      const result = await threads.rename(requireRegisteredRoot(body.root), renameMatch[1], body.slug);
       return sendJson(res, 200, result);
     }
 
     if (req.method === 'DELETE' && url.pathname === '/api/thread') {
       const body = await readJsonBody(req);
-      const result = await threads.remove(requireRoot(body.root), requireId(body.id));
+      const result = await threads.remove(requireRegisteredRoot(body.root), requireId(body.id));
       return sendJson(res, 200, result);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/active-thread') {
       const body = await readJsonBody(req);
-      const result = await threads.setActive(requireRoot(body.root), body.id ?? null);
+      const result = await threads.setActive(requireRegisteredRoot(body.root), body.id ?? null);
       return sendJson(res, 200, result);
     }
 

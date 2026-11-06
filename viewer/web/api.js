@@ -48,4 +48,12 @@ export const api = {
     request('/api/thread', jsonOptions('DELETE', { root, id })),
   setActive: (root, id) =>
     request('/api/active-thread', jsonOptions('POST', { root, id })),
+  confirmProject: (root) =>
+    request('/api/projects/confirm', jsonOptions('POST', { root })),
+  addProject: (root) =>
+    request('/api/projects', jsonOptions('POST', { root })),
+  ignoreProject: (root) =>
+    request('/api/projects/ignore', jsonOptions('POST', { root })),
+  deleteProject: (root) =>
+    request('/api/projects', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root }) }),
 };

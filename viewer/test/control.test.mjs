@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { freePort, withServer } from './fixture.mjs';
+import { canonicalRoot } from '../server/registry.mjs';
 
 const exec = promisify(execFile);
 const controlFile = fileURLToPath(new URL('../server/control.mjs', import.meta.url));
@@ -60,7 +61,7 @@ test('cold persistent start has no browser/project side effect; ordinary restart
   assert.deepEqual(await run(env, 'stop'), { running: false });
   const second = await run(env, 'start');
   assert.equal(second.mode, 'auto');
-  assert.deepEqual((await (await fetch(base + '/api/projects')).json()).map(({ root }) => root), [root.replace(/\\/g, '/')]);
+  assert.deepEqual((await (await fetch(base + '/api/projects')).json()).map(({ root }) => root), [canonicalRoot(root)]);
   assert.deepEqual(await run(env, 'stop'), { running: false });
 });
 

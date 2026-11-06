@@ -39,7 +39,7 @@ test('packaged Kimi and Codex adapters reuse one process and preserve registry o
   await mkdir(path.dirname(legacyFile), { recursive: true });
   const legacy = JSON.stringify({ projects: { 'C:\\legacy\\project': 123 } });
   await writeFile(legacyFile, legacy);
-  await stageRelease(viewer, stage, 'v0.2.12');
+  await stageRelease(viewer, stage, 'v0.2.13');
   const kimi = path.join(stage, 'kimi', 'server');
   const codex = path.join(stage, 'codex', 'server');
   const rootA = path.join(dir, 'project A');
@@ -53,9 +53,14 @@ test('packaged Kimi and Codex adapters reuse one process and preserve registry o
   assert.equal(JSON.parse(b.stdout).hookSpecificOutput.hookEventName, 'SessionStart');
   const first = await (await fetch(base + '/api/health')).json();
   assert.equal(first.mode, 'auto');
-  assert.equal(first.version, '0.2.12');
+  assert.equal(first.version, '0.2.13');
   const projects = await (await fetch(base + '/api/projects')).json();
   assert.equal(projects.length, 3);
+  // 双宿主自动发现只产生待确认记录；旧注册表导入的条目按迁移规则视为已注册
+  const states = Object.fromEntries(projects.map((p) => [p.root, p.state]));
+  assert.equal(states['c:/legacy/project'], 'registered');
+  assert.equal(states[path.join(dir, 'project A').replace(/\\/g, '/').toLowerCase()], 'pending');
+  assert.equal(states[path.join(dir, '项目 B').replace(/\\/g, '/').toLowerCase()], 'pending');
   assert.equal(await readFile(legacyFile, 'utf8'), legacy);
   const persistent = JSON.parse((await exec(process.execPath, [path.join(codex, 'control.mjs'), 'start', '--persistent'], { env })).stdout);
   assert.equal(persistent.pid, first.pid);
@@ -65,6 +70,12 @@ test('packaged Kimi and Codex adapters reuse one process and preserve registry o
   const activity = await hook(path.join(codex, 'codex-hook.mjs'), ['activity'], env, { cwd: rootB, hook_event_name: 'UserPromptSubmit' });
   assert.equal(activity.code, 0, activity.stderr);
   assert.equal((await (await fetch(base + '/api/health')).json()).pid, first.pid);
+  // 重复上报不推翻待确认状态，也不产生重复记录
+  const rediscovered = await (await fetch(base + '/api/projects')).json();
+  assert.equal(rediscovered.length, 3);
+  const rediscoveredStates = Object.fromEntries(rediscovered.map((p) => [p.root, p.state]));
+  assert.equal(rediscoveredStates[rootA.replace(/\\/g, '/').toLowerCase()], 'pending');
+  assert.equal(rediscoveredStates[rootB.replace(/\\/g, '/').toLowerCase()], 'pending');
   // The server's cwd is outside both plugin copies, so replacing an on-disk module remains possible.
   assert.equal(path.resolve(first.cwd), path.resolve(os.tmpdir()));
   await copyFile(path.join(viewer, 'server', 'metadata.mjs'), path.join(stage, 'kimi', 'server', 'metadata.mjs'));

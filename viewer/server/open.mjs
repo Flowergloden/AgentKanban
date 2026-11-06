@@ -8,7 +8,7 @@ if (!root || !path.isAbsolute(root)) {
   process.exitCode = 1;
 } else {
   try {
-    await ensure({ root });
+    await ensure({ root, confirm: true });
     const url = new URL('http://127.0.0.1:' + (process.env.AGENT_KANBAN_PORT || '4731') + '/');
     url.searchParams.set('root', root);
     if (process.env.AGENT_KANBAN_OPEN_DRY_RUN !== '1') {

@@ -9,9 +9,14 @@ const server = [
   'metadata.mjs', 'open.mjs', 'registry.mjs', 'server.mjs', 'threads.mjs', 'vcs.mjs',
 ].map((name) => `server/${name}`);
 const web = [
-  'api.js', 'app.js', 'dep-graph.js', 'detail.js', 'index.html', 'modals.js', 'project-state.js', 'service-controls.js',
+  'api.js', 'app.js', 'dep-graph.js', 'detail.js', 'document-sync.js', 'external-sync.js', 'index.html',
+  'markdown.js', 'markdown-merge.js', 'markdown-preview.js', 'modals.js', 'project-state.js', 'service-controls.js',
   'views-board.js', 'views-table.js', 'visibility.js',
   'vendor/preact-standalone.module.js',
+  'vendor/marked.esm.js', 'vendor/purify.es.mjs', 'vendor/diff3.mjs',
+  'vendor/README.md',
+  'vendor/LICENSE.marked.txt', 'vendor/LICENSE.dompurify.txt',
+  'vendor/LICENSE.dompurify-MPL.txt', 'vendor/LICENSE.node-diff3.md',
 ].map((name) => `web/${name}`);
 const skills = ['kanban-open', 'kanban-service', 'kanban-compress'].map((name) => `skills/${name}/SKILL.md`);
 const shared = ['SYSTEM.md', 'service.json', ...server, ...web, ...skills];

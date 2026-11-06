@@ -1,5 +1,9 @@
-import { html, useState, useEffect } from './vendor/preact-standalone.module.js';
+import { html, useState, useEffect, useRef } from './vendor/preact-standalone.module.js';
 import { api } from './api.js';
+import { MarkdownPreview } from './markdown-preview.js';
+import { createDocumentSync, SYNC_STATUS_LABEL } from './document-sync.js';
+import { createExternalSync } from './external-sync.js';
+import { mergeDocuments } from './markdown-merge.js';
 
 export function CreateModal({ root, onClose, onCreated }) {
   const [title, setTitle] = useState('');
@@ -42,6 +46,7 @@ export function CreateModal({ root, onClose, onCreated }) {
           onInput=${(e) => setGoal(e.target.value)}
           placeholder="例如：验证新版看板的交互细节，填补不合理或有障碍之处"
         />
+        <${MarkdownPreview} className="note-preview" source=${goal} />
         <label>slug（选填，kebab-case；留空时英文标题自动生成，非英文标题将由 Agent 在会话校准时自动命名）</label>
         <input value=${slug} onInput=${(e) => setSlug(e.target.value)} placeholder="例如：view-system" />
         ${error && html`<div class="modal-error">${error}</div>`}
@@ -56,54 +61,113 @@ export function CreateModal({ root, onClose, onCreated }) {
 
 export function NoteModal({ root, onClose }) {
   const [content, setContent] = useState(null); // null = 加载中
-  const [fingerprint, setFingerprint] = useState('');
-  const [conflict, setConflict] = useState(false);
+  const [sync, setSync] = useState(null);
+  const [syncState, setSyncState] = useState(null);
+  const [conflictRemote, setConflictRemote] = useState(null); // { content, fingerprint }
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [pollError, setPollError] = useState('');
+  const [closing, setClosing] = useState(false);
+  const syncRef = useRef(null);
+  syncRef.current = sync;
+  const pollerRef = useRef(null);
 
   const load = async () => {
     setError('');
-    setConflict(false);
     try {
       const n = await api.getNote(root);
+      const next = createDocumentSync({
+        write: (text, fingerprint) => api.updateNote(root, text, fingerprint),
+        merge: (base, local, remote) => mergeDocuments(base, local, remote),
+        onChange: setSyncState,
+      });
+      next.start({ content: n.note, fingerprint: n.fingerprint });
+      setSync(next);
+      setSyncState(next.getState());
       setContent(n.note);
-      setFingerprint(n.fingerprint);
+      setConflictRemote(null);
+      setPollError('');
     } catch (err) {
       setError(err.message);
       setContent(null);
     }
   };
 
-  useEffect(() => { load(); }, [root]);
-
-  const save = async () => {
-    if (content === null || busy) return;
-    setBusy(true);
-    setError('');
-    try {
-      const { fingerprint: fp } = await api.updateNote(root, content, fingerprint);
-      setFingerprint(fp);
-      setConflict(false);
-      onClose();
-    } catch (err) {
-      if (err.status === 409) {
-        setConflict(true);
-      } else {
-        setError(`保存失败：${err.message}`);
+  useEffect(() => {
+    load();
+    // 卸载（模态框关闭）前 flush：尽力提交待保存草稿
+    return () => {
+      const current = syncRef.current;
+      if (current) {
+        current.destroy();
+        void current.flush();
       }
-    } finally {
-      setBusy(false);
+    };
+  }, [root]);
+
+  // 可见页面轮询便签外部变更：干净时自动采用，编辑中按控制器规则协调；
+  // 读取失败暂停自动保存并保留草稿，服务恢复后自动继续
+  useEffect(() => {
+    const poller = createExternalSync({
+      check: async (gen) => {
+        try {
+          const n = await api.getNote(root);
+          syncRef.current?.resume();
+          setPollError('');
+          if (gen === poller.getGeneration()) {
+            const outcome = syncRef.current?.applyRemote({ content: n.note, fingerprint: n.fingerprint });
+            if (outcome?.kind === 'conflict') setConflictRemote({ content: n.note, fingerprint: n.fingerprint });
+            else if (outcome) setConflictRemote(null);
+          }
+        } catch (err) {
+          syncRef.current?.pause();
+          setPollError(err.status === 404
+            ? '便签读取失败（文件可能被移除）；自动保存已暂停，草稿保留，恢复后可重试。'
+            : `便签读取失败（${err.message}）；自动保存已暂停，草稿保留。`);
+        }
+      },
+    });
+    pollerRef.current = poller;
+    return () => poller.destroy();
+  }, [root]);
+
+  // 冲突处理：左侧草稿可编辑作为手工合并素材，右侧外部版本只读
+  const resolveAndSave = async () => {
+    const current = syncRef.current;
+    if (!current || !conflictRemote) return;
+    const ok = await current.resolveConflict(syncState?.draft ?? '', conflictRemote.fingerprint);
+    if (ok) setConflictRemote(null);
+  };
+
+  const adoptExternal = () => {
+    const current = syncRef.current;
+    if (!current || !conflictRemote) return;
+    current.adoptRemote(conflictRemote.content, conflictRemote.fingerprint);
+    setConflictRemote(null);
+  };
+
+  // 关闭前 flush；保存失败/冲突时保留模态框与草稿上下文
+  const close = async () => {
+    const current = syncRef.current;
+    if (!current || closing) {
+      if (!current) onClose();
+      return;
     }
+    setClosing(true);
+    await current.flush();
+    const state = current.getState();
+    setClosing(false);
+    if (state.status === 'saved') onClose();
+    else setError(state.status === 'conflict' ? '文件已被修改，自动保存已暂停；请解决冲突或复制内容后重载。' : '保存失败，便签未关闭，内容已保留。');
   };
 
   return html`
-    <div class="modal-mask" onClick=${(e) => e.target === e.currentTarget && !busy && onClose()}>
+    <div class="modal-mask" onClick=${(e) => e.target === e.currentTarget && void close()}>
       <div class="modal modal--wide">
         <h3>全局便签</h3>
-        <div class="hint" style="margin-top:0">仅供人类随手记录，不参与任何工作流（Agent 不读取、不采用此处内容）。内容保存到 <code>kanban/note.md</code>，也可用文本编辑器直接编辑。</div>
-        ${conflict && html`
+        <div class="hint" style="margin-top:0">仅供人类随手记录，不参与任何工作流（Agent 不读取、不采用此处内容）。内容保存到 <code>kanban/note.md</code>，也可用文本编辑器直接编辑；停止输入后自动保存。</div>
+        ${syncState?.status === 'conflict' && html`
           <div class="banner-409">
-            <span>文件已被修改，当前编辑未保存到磁盘。请复制好你的修改后重新加载。</span>
+            <span>文件已被修改（可能被 Agent 更新），当前编辑未保存到磁盘。请复制好你的修改后重新加载。</span>
             <button class="primary" onClick=${load}>重新加载（丢弃本地编辑）</button>
           </div>
         `}
@@ -113,17 +177,37 @@ export function NoteModal({ root, onClose }) {
             <div class="modal-actions"><button onClick=${load}>重试</button></div>
           ` : html`<div class="empty">加载中…</div>`}
         ` : html`
-          ${error && html`<div class="modal-error">${error}</div>`}
-          <textarea
-            class="note-editor"
-            value=${content}
-            onInput=${(e) => setContent(e.target.value)}
-            autoFocus
-          />
+          ${(error || pollError) && html`<div class="modal-error">${error || pollError} <button onClick=${load}>重试</button></div>`}
+          <div class="section-split">
+            <textarea
+              class="note-editor"
+              style="margin:0; min-height:200px"
+              value=${syncState?.draft ?? content}
+              onInput=${(e) => sync.setDraft(e.target.value)}
+              autoFocus
+            />
+            ${syncState?.status === 'conflict' && conflictRemote ? html`
+              <div class="conflict-remote section-preview">
+                <div class="conflict-col-title">外部版本（只读）</div>
+                <${MarkdownPreview} source=${conflictRemote.content} />
+              </div>
+            ` : html`
+              <${MarkdownPreview} className="note-preview section-preview" source=${syncState?.draft ?? content} />
+            `}
+          </div>
+          ${syncState?.status === 'conflict' && conflictRemote && html`
+            <div class="conflict-actions">
+              <span class="hint" style="margin:0">本地与外部修改了同一区域：在左侧手工合并后确认保存，或明确采用外部版本。</span>
+              <div style="display:flex;gap:8px;margin-top:6px">
+                <button class="primary" onClick=${resolveAndSave}>已解决并保存</button>
+                <button onClick=${adoptExternal}>采用外部版本</button>
+              </div>
+            </div>
+          `}
         `}
         <div class="modal-actions">
-          <button onClick=${onClose} disabled=${busy}>取消</button>
-          <button class="primary" onClick=${save} disabled=${busy || content === null}>保存</button>
+          <span class="sync-status" data-status=${syncState?.status}>${SYNC_STATUS_LABEL[syncState?.status] ?? ''}</span>
+          <button class="primary" onClick=${close} disabled=${closing}>${closing ? '保存中…' : '完成'}</button>
         </div>
       </div>
     </div>

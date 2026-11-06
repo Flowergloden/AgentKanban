@@ -7,6 +7,7 @@ import { BoardView } from './views-board.js';
 import { DepGraphView } from './dep-graph.js';
 import { ThreadDetail } from './detail.js';
 import { CreateModal, DeleteModal, NoteModal, P4AddModal, ManageModal } from './modals.js';
+import { createExternalSync } from './external-sync.js';
 import {
   findProject,
   registeredProjects,
@@ -21,6 +22,10 @@ const VIEWS = [
   { key: 'unfinished', label: '未完成' },
   { key: 'depgraph', label: '依赖图' },
 ];
+
+// 线程列表投影：外部轮询只据此判断列表是否变化，指纹未变不重置状态
+const listProjection = (list) =>
+  (list ?? []).map((t) => `${t.id}${t.title}${t.status}${t.mtimeMs}${t.active ? 1 : 0}${t.error ?? ''}`).join('\n');
 
 function App() {
   const [projects, setProjects] = useState([]); // 全量项目（含 state），服务按 lastSeen 降序返回
@@ -129,6 +134,26 @@ function App() {
       await refresh(root);
       await refreshProjects(); // 服务端已刷新 P4 检测：回读项目列表更新徽标
     })();
+  }, [root, currentState]);
+
+  // 可见页面轮询线程列表外部变更（Agent/其他窗口新建、删除、改状态）；
+  // 投影比对只在变化时更新列表，不重建详情编辑器；读取失败保持现状
+  useEffect(() => {
+    if (!root || !canWrite) return undefined;
+    const poller = createExternalSync({
+      check: async (gen) => {
+        try {
+          const data = await api.listThreads(root);
+          if (gen !== poller.getGeneration()) return;
+          setLayout(data.layout !== false);
+          setError('');
+          setThreads((prev) => (listProjection(prev) === listProjection(data.threads) ? prev : data.threads));
+        } catch {
+          // 列表读取失败不打扰当前视图；详情/便签的失败由各自控制器处理
+        }
+      },
+    });
+    return () => poller.destroy();
   }, [root, currentState]);
 
   const initProject = async () => {

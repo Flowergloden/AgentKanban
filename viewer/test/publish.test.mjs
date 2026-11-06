@@ -21,7 +21,7 @@ async function git(repo, args) {
   return stdout.trim();
 }
 
-async function fixtureRepo(t, { version = '0.2.15' } = {}) {
+async function fixtureRepo(t, { version = '0.2.16' } = {}) {
   const repo = await sandbox(t);
   for (const rel of versionFiles) {
     await mkdir(path.dirname(path.join(repo, 'viewer', rel)), { recursive: true });
@@ -51,14 +51,14 @@ test('parseVersion 接受 X.Y.Z 与 vX.Y.Z，拒绝其他格式', () => {
 });
 
 test('nextPatch 递增小版本号', () => {
-  assert.equal(nextPatch('0.2.15'), '0.2.16');
+  assert.equal(nextPatch('0.2.16'), '0.2.16');
   assert.equal(nextPatch('v1.9.9'), '1.9.10');
 });
 
 test('rewriteVersion 更新四份清单与测试样例，保留其他版本字面量', async (t) => {
   const { repo } = await fixtureRepo(t);
-  assert.equal(await currentVersion(repo), '0.2.15');
-  const changed = await rewriteVersion(repo, '0.2.15', '0.2.16');
+  assert.equal(await currentVersion(repo), '0.2.16');
+  const changed = await rewriteVersion(repo, '0.2.16', '0.2.16');
   assert.deepEqual(changed.sort(), [...versionFiles.map((rel) => `viewer/${rel}`), 'viewer/test/sample.test.mjs'].sort());
   assert.equal(await currentVersion(repo), '0.2.16');
   const sample = await readFile(path.join(repo, 'viewer', 'test', 'sample.test.mjs'), 'utf8');
@@ -76,7 +76,7 @@ test('干净工作区: 留空版本号自动小版本号+1，提交、注解 tag
   const { repo, remote } = await fixtureRepo(t);
   let asked = false;
   const result = await publish({ repo, version: undefined, confirm: async () => { asked = true; return true; } });
-  assert.deepEqual({ from: result.from, to: result.to, dirty: result.dirty }, { from: '0.2.15', to: '0.2.16', dirty: 0 });
+  assert.deepEqual({ from: result.from, to: result.to, dirty: result.dirty }, { from: '0.2.16', to: '0.2.16', dirty: 0 });
   assert.equal(asked, false);
   assert.equal(await git(repo, ['tag', '-l']), 'v0.2.16');
   assert.match(await git(repo, ['tag', '-l', 'v0.2.16', '--format=%(contents)']), /版本号更新至 0\.2\.16/);
@@ -92,7 +92,7 @@ test('tag 已存在时中止', async (t) => {
   const { repo } = await fixtureRepo(t);
   await git(repo, ['tag', '-a', 'v0.2.17', '-m', 'occupied']);
   await assert.rejects(publish({ repo, version: '0.2.17', confirm: async () => true }), /tag v0\.2\.17 已存在/);
-  assert.equal(await currentVersion(repo), '0.2.15');
+  assert.equal(await currentVersion(repo), '0.2.16');
 });
 
 test('有未提交更改且拒绝确认时中止，不留发版痕迹', async (t) => {
@@ -104,7 +104,7 @@ test('有未提交更改且拒绝确认时中止，不留发版痕迹', async (t
     /已取消/);
   assert.equal(asked, true);
   assert.equal(await git(repo, ['tag', '-l']), '');
-  assert.equal(await currentVersion(repo), '0.2.15');
+  assert.equal(await currentVersion(repo), '0.2.16');
 });
 
 test('有未提交更改且确认时只提交版本文件，其余更改保持未提交', async (t) => {

@@ -84,7 +84,7 @@ test('new open entry degrades against legacy service: reuses it and registers in
   let registerRequests = 0; let confirmRequests = 0; let shutdownRequests = 0;
   const legacy = http.createServer((req, res) => {
     res.setHeader('content-type', 'application/json');
-    if (req.url === '/api/health') return res.end(JSON.stringify({ ok: true, name: 'kanban-viewer', version: '0.2.15', mode: 'auto', pid: 4242 }));
+    if (req.url === '/api/health') return res.end(JSON.stringify({ ok: true, name: 'kanban-viewer', version: '0.2.16', mode: 'auto', pid: 4242 }));
     if (req.url === '/api/register') { registerRequests++; return res.end('{"ok":true}'); }
     if (req.url === '/api/projects/confirm') { confirmRequests++; return res.end('{"ok":true}'); }
     if (req.url === '/api/shutdown') { shutdownRequests++; return res.end('{"ok":true}'); }

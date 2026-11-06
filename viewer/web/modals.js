@@ -18,7 +18,7 @@ export function CreateModal({ root, onClose, onCreated }) {
       return;
     }
     if (slug && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-      setError('slug 必须是 kebab-case（小写字母、数字、连字符），留空则自动生成');
+      setError('slug 必须是 kebab-case（小写字母、数字、连字符），留空则由 Agent 在会话校准时自动命名');
       return;
     }
     setBusy(true);
@@ -47,7 +47,7 @@ export function CreateModal({ root, onClose, onCreated }) {
           placeholder="例如：验证新版看板的交互细节，填补不合理或有障碍之处"
         />
         <${MarkdownPreview} className="note-preview" source=${goal} />
-        <label>slug（选填，kebab-case；留空时英文标题自动生成，非英文标题将由 Agent 在会话校准时自动命名）</label>
+        <label>slug（选填，kebab-case；留空时将由 Agent 在会话校准时自动命名）</label>
         <input value=${slug} onInput=${(e) => setSlug(e.target.value)} placeholder="例如：view-system" />
         ${error && html`<div class="modal-error">${error}</div>`}
         <div class="modal-actions">

@@ -372,21 +372,21 @@ Kimi 插件 SHALL 保留 /kanban:open 及等价 skill；Codex 与 Claude Code SH
 
 ### Requirement: 线程创建与删除接口
 
-服务 SHALL 提供线程创建接口：请求携带线程标题，允许同时携带目标描述（非字符串或超过 5000 字符时 MUST 返回错误且不创建线程）；调用方提供目标描述时 SHALL 将其写入卷宗「目标」小节（替换模板中的填写说明注释），未提供时 SHALL 保留模板原样。服务 SHALL 分配下一个未用的序号 id、生成 slug（允许调用方指定），套用卷宗模板生成卷宗（status 默认为 `立项`，项目自有 `kanban/templates/thread.md` 存在时优先使用，缺失时以内置默认模板兜底）。slug 未指定时 SHALL 从标题自动生成：标题经 ASCII 化后无有效产出（如纯非英文标题）时，MUST 以保留标记值 `unnamed-pending` 占位，表示"待命名"，MUST NOT 再 fallback 为 `thread` 等固定词；标记值占位 SHALL 豁免 slug 冲突检查，多条待命名线程以序号前缀区分共存。`unnamed-pending` SHALL 为保留字：调用方显式以其作为创建 slug 时 MUST 返回错误且不创建线程。除标记值占位外，id/slug 冲突时 MUST 返回错误而非覆盖现有线程。创建所需目录结构缺失时 SHALL 自动补齐而非报错。服务 SHALL 提供线程删除接口：删除整个线程目录；目录不存在时返回明确状态；若被删除的是当前活跃线程，SHALL 同时清空 `kanban/current`。删除为真删，不提供回收站。
+服务 SHALL 提供线程创建接口：请求携带线程标题，允许同时携带目标描述（非字符串或超过 5000 字符时 MUST 返回错误且不创建线程）；调用方提供目标描述时 SHALL 将其写入卷宗「目标」小节（替换模板中的填写说明注释），未提供时 SHALL 保留模板原样。服务 SHALL 分配下一个未用的序号 id、生成 slug（允许调用方指定），套用卷宗模板生成卷宗（status 默认为 `立项`，项目自有 `kanban/templates/thread.md` 存在时优先使用，缺失时以内置默认模板兜底）。slug 未指定或留空时，无论标题语言，MUST 统一以保留标记值 `unnamed-pending` 占位，表示"待命名"，由 Agent 在会话校准中命名，MUST NOT 从标题自动生成或 fallback 为 `thread` 等固定词；标记值占位 SHALL 豁免 slug 冲突检查，多条待命名线程以序号前缀区分共存。`unnamed-pending` SHALL 为保留字：调用方显式以其作为创建 slug 时 MUST 返回错误且不创建线程。除标记值占位外，id/slug 冲突时 MUST 返回错误而非覆盖现有线程。创建所需目录结构缺失时 SHALL 自动补齐而非报错。服务 SHALL 提供线程删除接口：删除整个线程目录；目录不存在时返回明确状态；若被删除的是当前活跃线程，SHALL 同时清空 `kanban/current`。删除为真删，不提供回收站。
 
 #### Scenario: 创建线程
 
 - **WHEN** 以标题"用户认证"创建线程，且已有最大序号为 `0002`
 - **THEN** 新线程目录为 `0003-<slug>`，卷宗由模板生成、标题已填写、status 为 `立项`
 
-#### Scenario: 非英文标题创建为待命名线程
+#### Scenario: 中英文标题留空 slug 均创建为待命名线程
 
-- **WHEN** 以中文标题"细节优化"创建线程且 slug 留空
-- **THEN** 新线程目录为 `0003-unnamed-pending`（序号取下一未用值），创建成功不报 slug 冲突
+- **WHEN** 分别以中文标题"细节优化"和英文标题"Ergonomic improvements"创建线程且 slug 留空
+- **THEN** 两条新线程目录的 slug 均为 `unnamed-pending`，创建成功且不从标题自动生成 slug
 
 #### Scenario: 多条待命名线程共存
 
-- **WHEN** 已存在 `0003-unnamed-pending`，再以另一中文标题创建线程且 slug 留空
+- **WHEN** 已存在 `0003-unnamed-pending`，再以另一标题创建线程且 slug 留空
 - **THEN** 新线程目录为 `0004-unnamed-pending`，两条线程共存，不因 slug 相同而报错
 
 #### Scenario: 保留字拒绝显式使用

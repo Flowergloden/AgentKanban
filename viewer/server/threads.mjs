@@ -414,15 +414,8 @@ export async function setStatus(root, id, status) {
   return { fingerprint: fingerprint(updated) };
 }
 
-// 保留标记值：slug 留空且标题经 slugify 无产出时占位，表示"待命名"；调用方显式使用会被拒绝
+// 保留标记值：slug 留空时统一占位，表示"待命名"；调用方显式使用会被拒绝
 const RESERVED_SLUG = 'unnamed-pending';
-
-function slugify(title) {
-  return title
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase();
-}
 
 // 线程创建
 export async function create(root, title, slug, goal) {
@@ -448,11 +441,8 @@ export async function create(root, title, slug, goal) {
       throw new ThreadError('bad-request', `slug 为保留字，不可显式使用：${RESERVED_SLUG}`);
     }
   } else {
-    finalSlug = slugify(title);
-    if (!finalSlug) {
-      finalSlug = RESERVED_SLUG;
-      exemptConflict = true;
-    }
+    finalSlug = RESERVED_SLUG;
+    exemptConflict = true;
   }
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(finalSlug)) {
     throw new ThreadError('bad-request', `slug 必须是 kebab-case：${finalSlug}`);

@@ -31,3 +31,16 @@ test('thread document shape, unnamed-pending rename, active pointer and human no
   assert.equal(await readFile(note, 'utf8'), '人类私有内容：不可注入');
   assert.deepEqual((await threads.parseList(root)).threads.map((entry) => entry.id), [id]);
 });
+
+test('blank slug uses agent naming for both English and Chinese titles', async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kanban-thread-naming-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const english = await threads.create(root, 'English title', undefined);
+  const chinese = await threads.create(root, '中文标题', '   ');
+  const explicit = await threads.create(root, 'Explicit slug', 'chosen-slug');
+
+  assert.equal(english.id, '0001-unnamed-pending');
+  assert.equal(chinese.id, '0002-unnamed-pending');
+  assert.equal(explicit.id, '0003-chosen-slug');
+});

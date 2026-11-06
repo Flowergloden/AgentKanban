@@ -85,3 +85,23 @@ test('updateSection：非 `依赖` 小节缺失仍报错且不写盘', async (t)
   );
   assert.equal(await readFile(file, 'utf8'), original);
 });
+
+test('被依赖的待命名线程重命名后，序号引用自动解析到新 id', async (t) => {
+  const root = await withRoot(t);
+  const target = await threads.create(root, 'English dependency', undefined);
+  const dependent = await threads.create(root, 'Dependent thread', 'dependent');
+  const detail = await threads.getThread(root, dependent.id);
+  await threads.updateSection(root, dependent.id, '依赖', '- 0001', detail.fingerprint);
+  const dependentFile = path.join(root, 'kanban', 'threads', dependent.id, 'thread.md');
+  const before = await readFile(dependentFile, 'utf8');
+
+  const renamed = await threads.rename(root, target.id, 'named-dependency');
+
+  assert.equal(renamed.id, '0001-named-dependency');
+  assert.equal(await readFile(dependentFile, 'utf8'), before);
+  const list = await threads.parseList(root);
+  const source = list.threads.find((entry) => entry.id === dependent.id);
+  assert.deepEqual(source.deps, ['0001']);
+  const byNum = new Map(list.threads.map((entry) => [entry.id.slice(0, 4), entry]));
+  assert.equal(byNum.get(source.deps[0]).id, renamed.id);
+});

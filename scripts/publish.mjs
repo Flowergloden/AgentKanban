@@ -42,8 +42,10 @@ export async function currentVersion(repo) {
 export async function rewriteVersion(repo, from, to) {
   const targets = [...versionFiles];
   const testDir = path.join(repo, 'viewer', 'test');
+  // publish.test.mjs 校验发版逻辑本身，其中的版本字面量是固定样例，不参与同步。
+  const skipTests = new Set(['publish.test.mjs']);
   for (const name of await fs.readdir(testDir))
-    if (name.endsWith('.test.mjs')) targets.push(`viewer/test/${name}`);
+    if (name.endsWith('.test.mjs') && !skipTests.has(name)) targets.push(`viewer/test/${name}`);
   const changed = [];
   for (const rel of targets) {
     const file = path.join(repo, rel);

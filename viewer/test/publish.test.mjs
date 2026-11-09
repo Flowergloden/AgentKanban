@@ -51,19 +51,28 @@ test('parseVersion 接受 X.Y.Z 与 vX.Y.Z，拒绝其他格式', () => {
 });
 
 test('nextPatch 递增小版本号', () => {
-  assert.equal(nextPatch('0.2.17'), '0.2.17');
+  assert.equal(nextPatch('0.2.17'), '0.2.18');
   assert.equal(nextPatch('v1.9.9'), '1.9.10');
 });
 
 test('rewriteVersion 更新四份清单与测试样例，保留其他版本字面量', async (t) => {
   const { repo } = await fixtureRepo(t);
   assert.equal(await currentVersion(repo), '0.2.17');
-  const changed = await rewriteVersion(repo, '0.2.17', '0.2.17');
+  const changed = await rewriteVersion(repo, '0.2.17', '0.2.18');
   assert.deepEqual(changed.sort(), [...versionFiles.map((rel) => `viewer/${rel}`), 'viewer/test/sample.test.mjs'].sort());
-  assert.equal(await currentVersion(repo), '0.2.17');
+  assert.equal(await currentVersion(repo), '0.2.18');
   const sample = await readFile(path.join(repo, 'viewer', 'test', 'sample.test.mjs'), 'utf8');
-  assert.ok(sample.includes(`'0.2.17'`));
+  assert.ok(sample.includes(`'0.2.18'`));
   assert.ok(sample.includes('0.2.3') && sample.includes('0.2.4'));
+});
+
+test('rewriteVersion 跳过 publish.test.mjs 自身的版本字面量', async (t) => {
+  const { repo } = await fixtureRepo(t);
+  await writeFile(path.join(repo, 'viewer', 'test', 'publish.test.mjs'), `// 自身版本字面量 '0.2.17' 不应被改写\n`);
+  const changed = await rewriteVersion(repo, '0.2.17', '0.2.18');
+  assert.ok(!changed.includes('viewer/test/publish.test.mjs'));
+  const self = await readFile(path.join(repo, 'viewer', 'test', 'publish.test.mjs'), 'utf8');
+  assert.ok(self.includes(`'0.2.17'`));
 });
 
 test('currentVersion 在清单版本不一致时报错', async (t) => {
@@ -76,22 +85,22 @@ test('干净工作区: 留空版本号自动小版本号+1，提交、注解 tag
   const { repo, remote } = await fixtureRepo(t);
   let asked = false;
   const result = await publish({ repo, version: undefined, confirm: async () => { asked = true; return true; } });
-  assert.deepEqual({ from: result.from, to: result.to, dirty: result.dirty }, { from: '0.2.17', to: '0.2.17', dirty: 0 });
+  assert.deepEqual({ from: result.from, to: result.to, dirty: result.dirty }, { from: '0.2.17', to: '0.2.18', dirty: 0 });
   assert.equal(asked, false);
-  assert.equal(await git(repo, ['tag', '-l']), 'v0.2.17');
-  assert.match(await git(repo, ['tag', '-l', 'v0.2.17', '--format=%(contents)']), /版本号更新至 0\.2\.16/);
-  assert.match(await git(repo, ['log', '-1', '--format=%s']), /版本号更新至 0\.2\.16/);
-  assert.ok((await readFile(path.join(repo, 'viewer', 'service.json'), 'utf8')).includes('"version": "0.2.17"'));
-  assert.ok((await readFile(path.join(repo, 'viewer', 'test', 'sample.test.mjs'), 'utf8')).includes(`'0.2.17'`));
-  assert.ok((await exec('git', ['-C', remote, 'tag'])).stdout.includes('v0.2.17'));
+  assert.equal(await git(repo, ['tag', '-l']), 'v0.2.18');
+  assert.match(await git(repo, ['tag', '-l', 'v0.2.18', '--format=%(contents)']), /版本号更新至 0\.2\.18/);
+  assert.match(await git(repo, ['log', '-1', '--format=%s']), /版本号更新至 0\.2\.18/);
+  assert.ok((await readFile(path.join(repo, 'viewer', 'service.json'), 'utf8')).includes('"version": "0.2.18"'));
+  assert.ok((await readFile(path.join(repo, 'viewer', 'test', 'sample.test.mjs'), 'utf8')).includes(`'0.2.18'`));
+  assert.ok((await exec('git', ['-C', remote, 'tag'])).stdout.includes('v0.2.18'));
   const branch = await git(repo, ['branch', '--show-current']);
   assert.ok((await exec('git', ['-C', remote, 'branch', '--list', branch])).stdout.includes(branch));
 });
 
 test('tag 已存在时中止', async (t) => {
   const { repo } = await fixtureRepo(t);
-  await git(repo, ['tag', '-a', 'v0.2.17', '-m', 'occupied']);
-  await assert.rejects(publish({ repo, version: '0.2.17', confirm: async () => true }), /tag v0\.2\.17 已存在/);
+  await git(repo, ['tag', '-a', 'v0.2.18', '-m', 'occupied']);
+  await assert.rejects(publish({ repo, version: undefined, confirm: async () => true }), /tag v0\.2\.18 已存在/);
   assert.equal(await currentVersion(repo), '0.2.17');
 });
 

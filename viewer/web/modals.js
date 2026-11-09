@@ -46,7 +46,7 @@ export function CreateModal({ root, onClose, onCreated }) {
           onInput=${(e) => setGoal(e.target.value)}
           placeholder="例如：验证新版看板的交互细节，填补不合理或有障碍之处"
         />
-        <${MarkdownPreview} className="note-preview" source=${goal} />
+        <${MarkdownPreview} className="note-preview" source=${goal} onSourceChange=${setGoal} />
         <label>slug（选填，kebab-case；留空时将由 Agent 在会话校准时自动命名）</label>
         <input value=${slug} onInput=${(e) => setSlug(e.target.value)} placeholder="例如：view-system" />
         ${error && html`<div class="modal-error">${error}</div>`}
@@ -192,7 +192,11 @@ export function NoteModal({ root, onClose }) {
                 <${MarkdownPreview} source=${conflictRemote.content} />
               </div>
             ` : html`
-              <${MarkdownPreview} className="note-preview section-preview" source=${syncState?.draft ?? content} />
+              <${MarkdownPreview}
+                className="note-preview section-preview"
+                source=${syncState?.draft ?? content}
+                onSourceChange=${(next) => sync.setDraft(next)}
+              />
             `}
           </div>
           ${syncState?.status === 'conflict' && conflictRemote && html`

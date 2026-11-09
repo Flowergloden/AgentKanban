@@ -304,7 +304,11 @@ export function ThreadDetail({ root, threadId, isActive, threads, onBack, onOpen
                   <${MarkdownPreview} source=${conflictRemote.content} />
                 </div>
               ` : html`
-                <${MarkdownPreview} className="section-preview" source=${editState?.draft ?? ''} />
+                <${MarkdownPreview}
+                  className="section-preview"
+                  source=${editState?.draft ?? ''}
+                  onSourceChange=${(next) => { inputAtRef.current = Date.now(); editing.sync.setDraft(next); }}
+                />
               `}
             </div>
             ${editState?.status === 'conflict' ? html`

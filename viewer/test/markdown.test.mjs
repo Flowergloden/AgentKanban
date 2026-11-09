@@ -8,6 +8,7 @@ import {
   renderMarkdown,
   sanitizerAvailable,
   sanitizeHtml,
+  toggleMarkdownTask,
 } from '../web/markdown.js';
 
 const webDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
@@ -35,6 +36,8 @@ test('GFM 常见语法：标题、列表、表格、任务列表、代码块、�
     '[链接](https://example.com)',
     '',
     '**加粗** 与 *斜体*',
+    '',
+    '~~删除线~~ 与 https://example.com',
   ].join('\n'));
   assert.match(html, /<h1>标题<\/h1>/);
   assert.match(html, /<ul>\s*<li>项目一<\/li>/);
@@ -46,6 +49,79 @@ test('GFM 常见语法：标题、列表、表格、任务列表、代码块、�
   assert.match(html, /<a href="https:\/\/example\.com">链接<\/a>/);
   assert.match(html, /<strong>加粗<\/strong>/);
   assert.match(html, /<em>斜体<\/em>/);
+  assert.match(html, /<del>删除线<\/del>/);
+  assert.match(html, /<a href="https:\/\/example\.com">https:\/\/example\.com<\/a>/);
+});
+
+test('交互任务列表带顺序标识且可点击，默认渲染保持禁用', () => {
+  const source = '- [ ] 未办\n- [x] 已办';
+  const html = parseMarkdown(source, { interactiveTasks: true });
+  assert.match(html, /<input type="checkbox" data-task-index="0"> 未办/);
+  assert.match(html, /<input checked="" type="checkbox" data-task-index="1"> 已办/);
+  assert.doesNotMatch(html, /disabled/);
+  assert.match(parseMarkdown(source), /disabled="" type="checkbox"/);
+});
+
+test('任务切换按渲染顺序定位嵌套和有序列表，代码块不参与序号', () => {
+  const source = [
+    '- [ ] 顶层',
+    '  - [x] 嵌套',
+    '',
+    '1. [X] 有序',
+    '',
+    '```md',
+    '- [ ] 围栏代码',
+    '```',
+    '',
+    '    - [ ] 缩进代码',
+    '',
+    '`- [ ] 行内代码`',
+  ].join('\n');
+  assert.equal(toggleMarkdownTask(source, 0), source.replace('- [ ] 顶层', '- [x] 顶层'));
+  assert.equal(toggleMarkdownTask(source, 1), source.replace('- [x] 嵌套', '- [ ] 嵌套'));
+  assert.equal(toggleMarkdownTask(source, 2), source.replace('1. [X] 有序', '1. [ ] 有序'));
+  for (const index of [3, 4, -1, 1.5, Number.NaN]) {
+    assert.equal(toggleMarkdownTask(source, index), source);
+  }
+});
+
+test('任务切换支持列表内代码、引用和宽松列表，不误改相同文本', () => {
+  const source = [
+    '- [ ] 父项',
+    '  ```md',
+    '  - [ ] 代码',
+    '  ```',
+    '  - [x] 子项',
+    '- [ ] 兄弟项',
+    '',
+    '> - [ ] 引用',
+    '>   - [x] 引用子项',
+    '',
+    '- [ ] 宽松一',
+    '',
+    '- [x] 宽松二',
+  ].join('\n');
+  const expectations = [
+    ['- [ ] 父项', '- [x] 父项'],
+    ['- [x] 子项', '- [ ] 子项'],
+    ['- [ ] 兄弟项', '- [x] 兄弟项'],
+    ['> - [ ] 引用', '> - [x] 引用'],
+    ['>   - [x] 引用子项', '>   - [ ] 引用子项'],
+    ['- [ ] 宽松一', '- [x] 宽松一'],
+    ['- [x] 宽松二', '- [ ] 宽松二'],
+  ];
+  expectations.forEach(([from, to], index) => {
+    assert.equal(toggleMarkdownTask(source, index), source.replace(from, to));
+  });
+});
+
+test('任务切换保留 CRLF、末尾换行和其余原文', () => {
+  const source = '- [ ] 第一\r\n  - [X] 第二\r\n';
+  const first = toggleMarkdownTask(source, 0);
+  const second = toggleMarkdownTask(source, 1);
+  assert.equal(first, '- [x] 第一\r\n  - [X] 第二\r\n');
+  assert.equal(second, '- [ ] 第一\r\n  - [ ] 第二\r\n');
+  assert.equal(toggleMarkdownTask(source, 2), source);
 });
 
 test('空内容与纯空白渲染为空，不产生多余标签', () => {

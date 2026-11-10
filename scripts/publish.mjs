@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
 const versionFiles = [
+  'kimi.plugin.json',
   'viewer/kimi.plugin.json',
   'viewer/.codex-plugin/plugin.json',
   'viewer/.claude-plugin/plugin.json',

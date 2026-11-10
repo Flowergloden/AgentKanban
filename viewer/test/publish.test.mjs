@@ -27,6 +27,7 @@ async function fixtureRepo(t, { version = '0.2.17' } = {}) {
     await mkdir(path.dirname(path.join(repo, 'viewer', rel)), { recursive: true });
     await writeFile(path.join(repo, 'viewer', rel), `${JSON.stringify({ name: 'kanban', version }, null, 2)}\n`);
   }
+  await writeFile(path.join(repo, 'kimi.plugin.json'), `${JSON.stringify({ name: 'kanban', version }, null, 2)}\n`);
   await mkdir(path.join(repo, 'viewer', 'test'), { recursive: true });
   await writeFile(path.join(repo, 'viewer', 'test', 'sample.test.mjs'),
     `// 当前版本样例 '${version}'，历史固定样例 0.2.3 与 0.2.4 不应被改写\n`);
@@ -55,11 +56,11 @@ test('nextPatch 递增小版本号', () => {
   assert.equal(nextPatch('v1.9.9'), '1.9.10');
 });
 
-test('rewriteVersion 更新四份清单与测试样例，保留其他版本字面量', async (t) => {
+test('rewriteVersion 更新五份清单与测试样例，保留其他版本字面量', async (t) => {
   const { repo } = await fixtureRepo(t);
   assert.equal(await currentVersion(repo), '0.2.17');
   const changed = await rewriteVersion(repo, '0.2.17', '0.2.18');
-  assert.deepEqual(changed.sort(), [...versionFiles.map((rel) => `viewer/${rel}`), 'viewer/test/sample.test.mjs'].sort());
+  assert.deepEqual(changed.sort(), ['kimi.plugin.json', ...versionFiles.map((rel) => `viewer/${rel}`), 'viewer/test/sample.test.mjs'].sort());
   assert.equal(await currentVersion(repo), '0.2.18');
   const sample = await readFile(path.join(repo, 'viewer', 'test', 'sample.test.mjs'), 'utf8');
   assert.ok(sample.includes(`'0.2.18'`));
@@ -75,9 +76,9 @@ test('rewriteVersion 跳过 publish.test.mjs 自身的版本字面量', async (t
   assert.ok(self.includes(`'0.2.17'`));
 });
 
-test('currentVersion 在清单版本不一致时报错', async (t) => {
+test('currentVersion 在仓库根清单版本不一致时报错', async (t) => {
   const { repo } = await fixtureRepo(t);
-  await writeFile(path.join(repo, 'viewer', 'service.json'), `${JSON.stringify({ version: '0.2.99' })}\n`);
+  await writeFile(path.join(repo, 'kimi.plugin.json'), `${JSON.stringify({ version: '0.2.99' })}\n`);
   await assert.rejects(currentVersion(repo), /版本清单不一致/);
 });
 
@@ -126,6 +127,6 @@ test('有未提交更改且确认时只提交版本文件，其余更改保持�
   for (const rel of versionFiles) assert.ok(!status.includes(rel));
   const committed = (await git(repo, ['show', '--name-only', '--format=', 'HEAD'])).split('\n').filter(Boolean);
   assert.ok(committed.length > 0);
-  for (const file of committed) assert.ok(file.startsWith('viewer/'), file);
+  for (const file of committed) assert.ok(file === 'kimi.plugin.json' || file.startsWith('viewer/'), file);
   assert.ok(!committed.includes('notes.md'));
 });

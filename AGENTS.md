@@ -9,8 +9,8 @@
 1. 发版前先跑全量测试：`npm test --prefix viewer`（viewer/package.json 的 test 脚本，覆盖 `viewer/test/*.test.mjs`）。
 2. 执行 `node scripts/publish.mjs [vX.Y.Z]`：
    - 不带参数时自动取当前版本的下一个 patch 号；
-   - 校验 4 个版本文件一致、新 tag 不存在、当前处于分支上（非 detached HEAD）；
-   - 将 4 个版本文件与 `viewer/test/*.test.mjs` 中的版本样例同步改写（`publish.test.mjs` 的固定样例除外），提交 `chore(kanban): 版本号更新至 X.Y.Z 并同步测试版本样例`；
+   - 校验 5 个版本文件一致、新 tag 不存在、当前处于分支上（非 detached HEAD）；
+   - 将 5 个版本文件与 `viewer/test/*.test.mjs` 中的版本样例同步改写（`publish.test.mjs` 的固定样例除外），提交 `chore(kanban): 版本号更新至 X.Y.Z 并同步测试版本样例`；
    - 打 tag `vX.Y.Z` 并 push 分支与 tag。工作区有未提交更改时脚本会列出并需显式确认才继续，且只会提交版本相关文件，其余更改保持未提交。
 3. push tag 后 CI（`.github/workflows/release.yml`）自动完成剩余工作，Release 无需手工创建：
    - `node scripts/release.mjs stage $TAG <临时目录>` 按宿主白名单暂存 kimi / codex / claude 三个包；
@@ -20,8 +20,9 @@
 
 ### 版本号载体
 
-以下 4 个文件的 `version` 必须保持一致，`publish.mjs` 会自动同步，改版本只走它：
+以下 5 个文件的 `version` 必须保持一致，`publish.mjs` 会自动同步，改版本只走它：
 
+- `kimi.plugin.json`（GitHub 仓库安装入口，引用 `./viewer/` 内资源）
 - `viewer/kimi.plugin.json`
 - `viewer/.codex-plugin/plugin.json`
 - `viewer/.claude-plugin/plugin.json`

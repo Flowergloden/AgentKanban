@@ -141,3 +141,24 @@ test('root marketplace points archive source at the pipeline Claude artifact ove
   assert.equal(artifact, 'kanban-claude-plugin.zip');
   assert.match(await readFile(path.join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8'), new RegExp(artifact.replace(/[.]/g, '\.')));
 });
+
+test('root Kimi manifest mirrors packaged metadata and resolves viewer resources', async () => {
+  const repoRoot = path.join(viewer, '..');
+  const rootManifest = JSON.parse(await readFile(path.join(repoRoot, 'kimi.plugin.json'), 'utf8'));
+  const packageManifest = JSON.parse(await readFile(path.join(viewer, 'kimi.plugin.json'), 'utf8'));
+  const { systemPromptPath, hooks, commands, skills, ...metadata } = packageManifest;
+  assert.deepEqual(rootManifest, {
+    ...metadata,
+    systemPromptPath: './viewer/SYSTEM.md',
+    hooks: hooks.map((hook) => ({ ...hook, command: hook.command.replace('./server/', './viewer/server/') })),
+    commands: './viewer/commands/',
+    skills: './viewer/skills/',
+  });
+  assert.ok((await readFile(path.join(repoRoot, rootManifest.systemPromptPath))).length > 0);
+  for (const ref of [rootManifest.commands, rootManifest.skills])
+    assert.ok((await readdir(path.join(repoRoot, ref))).length > 0);
+  for (const hook of rootManifest.hooks) {
+    const target = hook.command.match(/\.\/viewer\/server\/[\w-]+\.mjs$/)?.[0];
+    assert.ok(target && (await readFile(path.join(repoRoot, target))).length > 0);
+  }
+});

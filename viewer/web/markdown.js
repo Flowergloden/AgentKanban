@@ -100,6 +100,14 @@ export function toggleMarkdownTask(source, taskIndex) {
   return text.slice(0, sourceOffset) + next + text.slice(sourceOffset + 1);
 }
 
+// 返回全文档 GFM 任务标记的原始偏移（升序，CRLF 安全）；
+// Live Preview 的任务 widget 用它把区块内任务序号换算为全文档序号。
+export function markdownTaskOffsets(source) {
+  const text = String(source ?? '');
+  const { normalized, offsets } = normalizeSource(text);
+  return collectTokenOffsets(marked.lexer(normalized), normalized).map((index) => offsets[index]);
+}
+
 // 仅供测试与诊断使用：输出未清理的 marked HTML，禁止直接插入 DOM。
 export function parseMarkdown(source, { interactiveTasks = false } = {}) {
   const text = String(source ?? '');

@@ -1,6 +1,7 @@
 import { html, useState, useEffect, useRef } from './vendor/preact-standalone.module.js';
 import { api } from './api.js';
 import { MarkdownPreview } from './markdown-preview.js';
+import { MarkdownLiveEditor } from './markdown-live-editor.js';
 import { createDocumentSync, SYNC_STATUS_LABEL } from './document-sync.js';
 import { createExternalSync } from './external-sync.js';
 import { mergeDocuments } from './markdown-merge.js';
@@ -38,15 +39,13 @@ export function CreateModal({ root, onClose, onCreated }) {
         <h3>新建线程</h3>
         <label>标题（必填）</label>
         <input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder="例如：视图体系探索" autoFocus />
-        <label>目标（选填）：这条线程要达成的笼统目标，写入卷宗「目标」小节</label>
-        <textarea
-          class="note-editor"
-          style="min-height: 64px"
+        <label>目标（选填）：这条线程要达成的笼统目标，写入卷宗「目标」小节（支持 Markdown 与任务清单）</label>
+        <${MarkdownLiveEditor}
+          className="goal-editor"
           value=${goal}
-          onInput=${(e) => setGoal(e.target.value)}
+          onChange=${setGoal}
           placeholder="例如：验证新版看板的交互细节，填补不合理或有障碍之处"
         />
-        <${MarkdownPreview} className="note-preview" source=${goal} onSourceChange=${setGoal} />
         <label>slug（选填，kebab-case；留空时将由 Agent 在会话校准时自动命名）</label>
         <input value=${slug} onInput=${(e) => setSlug(e.target.value)} placeholder="例如：view-system" />
         ${error && html`<div class="modal-error">${error}</div>`}
@@ -179,11 +178,10 @@ export function NoteModal({ root, onClose }) {
         ` : html`
           ${(error || pollError) && html`<div class="modal-error">${error || pollError} <button onClick=${load}>重试</button></div>`}
           <div class="section-split">
-            <textarea
-              class="note-editor"
-              style="margin:0; min-height:200px"
+            <${MarkdownLiveEditor}
+              className="note-live"
               value=${syncState?.draft ?? content}
-              onInput=${(e) => sync.setDraft(e.target.value)}
+              onChange=${(next) => sync.setDraft(next)}
               autoFocus
             />
             ${syncState?.status === 'conflict' && conflictRemote ? html`
@@ -191,13 +189,7 @@ export function NoteModal({ root, onClose }) {
                 <div class="conflict-col-title">外部版本（只读）</div>
                 <${MarkdownPreview} source=${conflictRemote.content} />
               </div>
-            ` : html`
-              <${MarkdownPreview}
-                className="note-preview section-preview"
-                source=${syncState?.draft ?? content}
-                onSourceChange=${(next) => sync.setDraft(next)}
-              />
-            `}
+            ` : null}
           </div>
           ${syncState?.status === 'conflict' && conflictRemote && html`
             <div class="conflict-actions">

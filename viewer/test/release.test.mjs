@@ -50,6 +50,11 @@ test('all three release archives unpack with exact runtime resources and no deve
     assert.deepEqual(await listTree(extracted), [...filesFor(host)].sort());
     const expected = { kimi: 'kimi.plugin.json', codex: '.codex-plugin/plugin.json', claude: '.claude-plugin/plugin.json' }[host];
     assert.ok((await readFile(path.join(extracted, expected))).length > 0);
+    for (const asset of ['web/vendor/codemirror.bundle.mjs', 'web/vendor/LICENSE.codemirror.txt']) {
+      const content = await readFile(path.join(extracted, asset));
+      assert.ok(content.length > 0, `${host} 包缺少编辑器资源 ${asset}`);
+    }
+    assert.match(await readFile(path.join(extracted, 'web/vendor/codemirror.bundle.mjs'), 'utf8'), /CodeMirror 6 self-contained ESM bundle/);
     for (const forbidden of ['kanban', 'openspec', '.agents', 'test'])
       await assert.rejects(readFile(path.join(extracted, forbidden, 'README.md')));
   }

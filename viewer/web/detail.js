@@ -1,7 +1,8 @@
 import { html, useState, useEffect, useRef } from './vendor/preact-standalone.module.js';
 import { api } from './api.js';
 import { MarkdownPreview } from './markdown-preview.js';
-import { createDocumentSync, SYNC_STATUS_LABEL, mapCursor } from './document-sync.js';
+import { MarkdownLiveEditor } from './markdown-live-editor.js';
+import { createDocumentSync, SYNC_STATUS_LABEL } from './document-sync.js';
 import { createExternalSync } from './external-sync.js';
 import { mergeDocuments } from './markdown-merge.js';
 
@@ -38,35 +39,6 @@ export function ThreadDetail({ root, threadId, isActive, threads, onBack, onOpen
   const threadRef = useRef(null);
   threadRef.current = thread;
   const pollerRef = useRef(null);
-  const taRef = useRef(null);
-  const prevDraftRef = useRef(null);
-  const inputAtRef = useRef(0);
-
-  // 程序化草稿更新（自动合并/采用外部）时保留光标；用户自己的输入不干预
-  useEffect(() => {
-    const ta = taRef.current;
-    const draft = editState?.draft;
-    if (!ta) {
-      prevDraftRef.current = draft ?? null;
-      return;
-    }
-    if (Date.now() - inputAtRef.current < 150) {
-      prevDraftRef.current = draft ?? null;
-      return;
-    }
-    if (document.activeElement === ta && prevDraftRef.current != null && prevDraftRef.current !== draft) {
-      const mapped = mapCursor(prevDraftRef.current, draft ?? '', ta.selectionStart ?? 0);
-      prevDraftRef.current = draft ?? null;
-      requestAnimationFrame(() => {
-        if (document.activeElement === ta) {
-          ta.selectionStart = mapped;
-          ta.selectionEnd = mapped;
-        }
-      });
-      return;
-    }
-    prevDraftRef.current = draft ?? null;
-  }, [editState?.draft]);
 
   const load = async () => {
     setError('');
@@ -292,24 +264,17 @@ export function ThreadDetail({ root, threadId, isActive, threads, onBack, onOpen
           </div>
           ${isEditing ? html`
             <div class="section-split">
-              <textarea
-                ref=${taRef}
-                class="section-editor"
+              <${MarkdownLiveEditor}
+                className="section-live"
                 value=${editState?.draft ?? ''}
-                onInput=${(e) => { inputAtRef.current = Date.now(); editing.sync.setDraft(e.target.value); }}
+                onChange=${(next) => editing.sync.setDraft(next)}
               />
               ${editState?.status === 'conflict' && conflictRemote ? html`
                 <div class="conflict-remote section-preview">
                   <div class="conflict-col-title">外部版本（只读）</div>
                   <${MarkdownPreview} source=${conflictRemote.content} />
                 </div>
-              ` : html`
-                <${MarkdownPreview}
-                  className="section-preview"
-                  source=${editState?.draft ?? ''}
-                  onSourceChange=${(next) => { inputAtRef.current = Date.now(); editing.sync.setDraft(next); }}
-                />
-              `}
+              ` : null}
             </div>
             ${editState?.status === 'conflict' ? html`
               <div class="conflict-actions">

@@ -54,16 +54,42 @@
   .md-preview-error { color: #cf222e; font-size: 12px; margin-bottom: 6px; }
   .md-preview-source { white-space: pre-wrap; margin: 0; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
   .section-split { display: flex; gap: 12px; align-items: flex-start; margin: 6px 0; }
-  .section-split .section-editor { flex: 1; margin: 0; }
-  .section-split .note-editor { flex: 1; }
+  .section-split .md-live { flex: 1; margin: 0; }
   .section-split .section-preview { flex: 1; max-height: 50vh; overflow: auto; }
   @media (max-width: 900px) {
     .section-split { flex-direction: column; }
-    .section-split .section-editor, .section-split .section-preview { width: 100%; }
+    .section-split .md-live, .section-split .section-preview { width: 100%; }
   }
-  textarea.section-editor { width: 100%; min-height: 140px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; padding: 8px; box-sizing: border-box; margin: 6px 0; }
   .section-head { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
   .section-head h3 { margin: 0; font-size: 14px; }
+  /* 共享 Markdown Live Preview 编辑器（CodeMirror） */
+  .md-live { background: #fff; border: 1px solid #d0d7de; border-radius: 6px; margin: 6px 0; max-width: 100%; box-sizing: border-box; }
+  .md-live-bar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid #eaeef2; }
+  .md-live-mode { font-size: 12px; padding: 2px 8px; }
+  .md-live-error { color: #cf222e; font-size: 12px; }
+  .md-live-host .cm-editor { min-height: 140px; font-size: 13px; border-radius: 0 0 6px 6px; }
+  .md-live-host .cm-editor.cm-focused { outline: none; }
+  .md-live-host .cm-scroller { line-height: 1.6; font-family: inherit; }
+  .md-live[data-mode="source"] .cm-content { font-family: ui-monospace, Consolas, monospace; }
+  .note-live .md-live-host .cm-editor { min-height: 200px; }
+  .goal-editor .md-live-host .cm-editor { min-height: 96px; }
+  /* 非活动区块渲染 widget 的排版（HTML 均经 renderMarkdown 清理） */
+  /* .cm-line 的 pre-wrap 会让 marked HTML 标签间的空白文本渲染成行盒，widget 内恢复 normal */
+  .md-live-block { padding: 1px 0; word-break: break-word; white-space: normal; }
+  .md-live-block pre, .md-live-block pre code { white-space: pre; }
+  .md-live-block > :first-child { margin-top: 2px; }
+  .md-live-block > :last-child { margin-bottom: 2px; }
+  .md-live-block h1, .md-live-block h2 { font-size: 17px; margin: 10px 0 6px; line-height: 1.4; }
+  .md-live-block h3, .md-live-block h4 { font-size: 14px; margin: 8px 0 4px; line-height: 1.4; }
+  .md-live-block p, .md-live-block ul, .md-live-block ol, .md-live-block blockquote, .md-live-block table, .md-live-block pre { margin: 4px 0; }
+  .md-live-block ul, .md-live-block ol { padding-left: 22px; }
+  .md-live-block blockquote { border-left: 3px solid #d0d7de; color: #57606a; padding: 2px 10px; }
+  .md-live-block code { background: #eff1f3; border-radius: 4px; padding: 1px 5px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+  .md-live-block pre code { display: block; padding: 8px 10px; overflow: auto; }
+  .md-live-block a { color: #1f6feb; }
+  .md-live-block img { max-width: 100%; }
+  .md-live-block input[type="checkbox"] { width: auto; margin: 0 4px 0 0; padding: 0; vertical-align: middle; }
+  .md-live-block table { display: block; overflow: auto; }
   .sync-status { font-size: 12px; color: #57606a; }
   .sync-status[data-status="dirty"] { color: #9a6700; }
   .sync-status[data-status="saving"] { color: #57606a; }
@@ -78,11 +104,9 @@
   .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; }
   .modal { background: #fff; border-radius: 8px; padding: 20px; width: 420px; max-width: 90vw; }
   .modal--wide { width: 640px; }
-  textarea.note-editor { width: 100%; min-height: 320px; font-size: 13px; line-height: 1.6; padding: 8px; box-sizing: border-box; margin: 10px 0 4px; resize: vertical; }
-  .note-preview { background: #fff; border: 1px solid #d0d7de; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.6; min-height: 64px; max-height: 40vh; overflow: auto; }
   .modal h3 { margin-top: 0; }
   .modal label { display: block; font-size: 13px; margin: 10px 0 4px; }
-  .modal input { width: 100%; padding: 6px 8px; font-size: 13px; box-sizing: border-box; }
+  .modal input:not([type="checkbox"]) { width: 100%; padding: 6px 8px; font-size: 13px; box-sizing: border-box; }
   .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .modal .modal-error { color: #cf222e; font-size: 13px; margin-top: 8px; }
   .p4-file-list { margin: 8px 0; padding-left: 20px; font-size: 13px; max-height: 30vh; overflow: auto; }

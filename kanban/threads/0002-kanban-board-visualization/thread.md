@@ -42,3 +42,7 @@ status: 完成
 
 - add-kanban-viewer
 - add-thread-management
+
+## 依赖
+
+- 0001

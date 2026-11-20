@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { withServer } from './fixture.mjs';
-import { defaultSchema } from '../server/schema.mjs';
+import { defaultSchema, schemaFingerprint } from '../server/schema.mjs';
 
 const json = (method, value, headers = {}) => ({ method, headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(value) });
 
@@ -116,6 +116,26 @@ test('非法 schema 明确失败且服务协议保持 1', async (t) => {
     const response = await fetch(`${url}/api/threads?root=${encodeURIComponent(root)}`);
     assert.equal(response.status, 400);
     assert.match((await response.json()).error, /thread\.schema\.json.*JSON 解析失败/);
+    assert.equal((await fetch(url + '/api/health')).status, 200);
+  });
+});
+
+test('列表与详情返回有效 views；非法视图配置明确定位报错并拒绝写操作', async (t) => {
+  await withServer(t, async ({ url, dir }) => {
+    const root = await registeredProject(url, dir);
+    await fetch(url + '/api/init', json('POST', { root }));
+    const list = await (await fetch(`${url}/api/threads?root=${encodeURIComponent(root)}`)).json();
+    assert.deepEqual(list.schema.views.map((view) => view.key), ['all', 'status-board', 'dependency-graph']);
+    assert.equal(list.schemaFingerprint, schemaFingerprint(list.schema));
+
+    const schema = defaultSchema();
+    schema.views = [{ key: 'only-board', label: '只看板', kind: 'board', fieldKey: 'status' }];
+    await writeFile(path.join(root, 'kanban', 'thread.schema.json'), JSON.stringify(schema));
+    const response = await fetch(`${url}/api/threads?root=${encodeURIComponent(root)}`);
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /\$\.views.*table/);
+    const put = await fetch(url + '/api/thread/field', json('PUT', { root, id: '0001-x', fieldKey: 'goal', content: 'x', fingerprint: 'x' }));
+    assert.equal(put.status, 400);
     assert.equal((await fetch(url + '/api/health')).status, 200);
   });
 });

@@ -49,6 +49,32 @@
       "type": "reference",
       "description": "（可选）本线程依赖的其他线程：纯序号、一行一条，仅记录关系，不约束状态流转或完成。",
       "required": false
+    },
+    {
+      "key": "test",
+      "label": "测试",
+      "type": "markdown",
+      "description": "(禁止读取) 仅测试",
+      "required": false
+    }
+  ],
+  "views": [
+    {
+      "key": "all",
+      "label": "全部字段",
+      "kind": "table"
+    },
+    {
+      "key": "status-board",
+      "label": "状态看板",
+      "kind": "board",
+      "fieldKey": "status"
+    },
+    {
+      "key": "dependency-graph",
+      "label": "依赖关系",
+      "kind": "graph",
+      "fieldKey": "dependencies"
     }
   ]
 }

@@ -1,17 +1,33 @@
 export const TABLE_VIEW = Object.freeze({ kind: 'table' });
 
-export function viewsForSchema(schema) {
-  const views = [{ ...TABLE_VIEW, key: 'table', label: '全部字段' }];
-  for (const field of schema?.fields ?? []) {
-    if (field.type === 'select') views.push({ kind: 'board', fieldKey: field.key, key: `board:${field.key}`, label: `看板：${field.label}` });
-    if (field.type === 'reference') views.push({ kind: 'graph', fieldKey: field.key, key: `graph:${field.key}`, label: `引用图：${field.label}` });
-  }
-  return views;
+// 与服务端默认 schema 一致的兜底视图：schema 尚未加载或来自旧服务时保持页面可用
+const FALLBACK_VIEWS = Object.freeze([
+  Object.freeze({ key: 'all', label: '全部字段', kind: 'table' }),
+  Object.freeze({ key: 'status-board', label: '状态看板', kind: 'board', fieldKey: 'status' }),
+  Object.freeze({ key: 'dependency-graph', label: '依赖关系', kind: 'graph', fieldKey: 'dependencies' }),
+]);
+
+// 视图入口只来自 schema.views 配置（key、label、顺序、字段绑定），不为字段类型自动派生
+function configuredViews(schema) {
+  return Array.isArray(schema?.views) && schema.views.length > 0 ? schema.views : FALLBACK_VIEWS;
 }
 
+export function viewsForSchema(schema) {
+  return configuredViews(schema).map((view) => ({
+    key: view.key,
+    label: view.label,
+    kind: view.kind,
+    ...(view.fieldKey !== undefined ? { fieldKey: view.fieldKey } : {}),
+  }));
+}
+
+// 有效性同时核对配置项与字段绑定：入口存在于 views 配置，且 board/graph 绑定字段仍存在且类型匹配
 export function isViewValid(view, schema) {
-  if (!view || view.kind === 'table') return true;
-  const field = schema?.fields?.find((item) => item.key === view.fieldKey);
+  if (!view || !schema) return false;
+  const entry = configuredViews(schema).find((item) => item.kind === view.kind && (item.kind === 'table' || item.fieldKey === view.fieldKey));
+  if (!entry) return false;
+  if (view.kind === 'table') return true;
+  const field = schema.fields?.find((item) => item.key === view.fieldKey);
   return Boolean(field && ((view.kind === 'board' && field.type === 'select') || (view.kind === 'graph' && field.type === 'reference')));
 }
 

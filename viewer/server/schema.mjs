@@ -12,6 +12,12 @@ export const CORE_FIELDS = Object.freeze({
   dependencies: Object.freeze({ type: 'reference', label: '依赖' }),
 });
 
+export const DEFAULT_VIEWS = Object.freeze([
+  Object.freeze({ key: 'all', label: '全部字段', kind: 'table' }),
+  Object.freeze({ key: 'status-board', label: '状态看板', kind: 'board', fieldKey: 'status' }),
+  Object.freeze({ key: 'dependency-graph', label: '依赖关系', kind: 'graph', fieldKey: 'dependencies' }),
+]);
+
 export const DEFAULT_SCHEMA = Object.freeze({
   version: 1,
   fields: Object.freeze([
@@ -22,6 +28,7 @@ export const DEFAULT_SCHEMA = Object.freeze({
     Object.freeze({ key: 'changes', label: 'Changes', type: 'markdown', description: '（可选）关联的 OpenSpec change 名字列表，仅当本线程使用 OpenSpec 工作流时才登记；不使用时留空即可。一行一条（仅名字，松耦合引用），例如：\n- add-xxx' }),
     Object.freeze({ key: 'dependencies', label: '依赖', type: 'reference', description: '（可选）本线程依赖的其他线程：纯序号、一行一条，仅记录关系，不约束状态流转或完成。' }),
   ]),
+  views: DEFAULT_VIEWS,
 });
 
 export class SchemaError extends Error {
@@ -34,6 +41,43 @@ export class SchemaError extends Error {
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (location, message) => { throw new SchemaError(`${location} ${message}`); };
+
+const VIEW_KINDS = Object.freeze(['table', 'board', 'graph']);
+
+// 视图清单校验：恰好一个不携带 fieldKey 的 table；board 必须绑定 select、graph 必须绑定 reference；
+// 省略 views 的既有 schema 以默认三视图走同一规范化路径，保证有效配置与显式默认完全一致。
+function validateViews(input, fields) {
+  const list = input.views === undefined ? DEFAULT_VIEWS : input.views;
+  if (!Array.isArray(list) || list.length === 0) fail('$.views', '必须是非空数组');
+  const keys = new Set();
+  const combos = new Set();
+  let tables = 0;
+  const views = list.map((view, index) => {
+    const at = `$.views[${index}]`;
+    if (!isObject(view)) fail(at, '必须是对象');
+    if (typeof view.key !== 'string' || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(view.key)) fail(`${at}.key`, '必须是小写英文 kebab-case');
+    if (keys.has(view.key)) fail(`${at}.key`, `重复：${view.key}`);
+    keys.add(view.key);
+    if (typeof view.label !== 'string' || !view.label.trim() || /[\r\n]/.test(view.label)) fail(`${at}.label`, '必须是非空单行字符串');
+    if (!VIEW_KINDS.includes(view.kind)) fail(`${at}.kind`, `不支持：${view.kind}`);
+    if (view.kind === 'table') {
+      tables += 1;
+      if (view.fieldKey !== undefined) fail(`${at}.fieldKey`, 'table 视图不得携带 fieldKey');
+      return { key: view.key, label: view.label, kind: 'table' };
+    }
+    if (typeof view.fieldKey !== 'string' || !view.fieldKey) fail(`${at}.fieldKey`, 'board/graph 视图必须绑定 fieldKey');
+    const combo = `${view.kind}+${view.fieldKey}`;
+    if (combos.has(combo)) fail(at, `非 table 视图的 kind+fieldKey 组合重复：${combo}`);
+    combos.add(combo);
+    const field = fields.find((item) => item.key === view.fieldKey);
+    if (!field) fail(`${at}.fieldKey`, `绑定的字段不存在：${view.fieldKey}`);
+    if (view.kind === 'board' && field.type !== 'select') fail(`${at}.fieldKey`, `看板必须绑定 select 字段：${view.fieldKey}（当前 ${field.type}）`);
+    if (view.kind === 'graph' && field.type !== 'reference') fail(`${at}.fieldKey`, `引用图必须绑定 reference 字段：${view.fieldKey}（当前 ${field.type}）`);
+    return { key: view.key, label: view.label, kind: view.kind, fieldKey: view.fieldKey };
+  });
+  if (tables !== 1) fail('$.views', `必须恰好包含一个不携带 fieldKey 的 table 视图（当前 ${tables} 个）`);
+  return views;
+}
 
 export function validateSchema(input) {
   if (!isObject(input)) fail('$', '必须是对象');
@@ -87,7 +131,8 @@ export function validateSchema(input) {
   if (JSON.stringify(status.options) !== JSON.stringify(STATUS_OPTIONS) || status.default !== '立项' || !status.required) {
     fail('$.fields[key=status]', '必须固定为立项、规划、实现、完成，默认立项且必填');
   }
-  return { version: 1, fields };
+  const views = validateViews(input, fields);
+  return { version: 1, fields, views };
 }
 
 export function defaultSchema() {

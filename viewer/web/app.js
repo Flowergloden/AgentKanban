@@ -161,7 +161,7 @@ function App() {
   useEffect(() => {
     if (schema && !isViewValid(view, schema)) {
       setView({ ...TABLE_VIEW });
-      setNotice('当前视图字段已在 schema 中失效，已回退到全部字段；未发送旧字段写请求。');
+      setNotice('当前视图配置已在 schema 中失效，已回退到配置的表格视图；未发送旧字段写请求。');
     }
   }, [schemaFingerprint]);
 

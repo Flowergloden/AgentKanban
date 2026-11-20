@@ -8,7 +8,7 @@
 kanban/
 ├── current                 # 活跃线程目录名；空或不存在 = 无活跃线程
 ├── note.md                 # 人类专属便签，Agent 不读取、不采用
-├── thread.schema.json      # 项目级有序字段结构
+├── thread.schema.json      # 项目级有序字段结构与视图清单
 ├── threads/<id>-<slug>/thread.md
 └── README.md
 ```
@@ -32,11 +32,27 @@ kanban/
 
 label、description 和字段顺序可改，核心 key 与类型不可改。`title` 是卷宗 H1 系统元数据，不是 schema 字段。schema 缺失时读取使用内置默认结构；文件存在但非法时会报错，不能靠删除核心字段或改成未知类型来绕过。
 
+### 视图清单（views）
+
+`views` 是有序数组，配置看板页面的视图入口：每项包含稳定 `key`、显示 `label` 和 `kind`（`table`、`board`、`graph` 之一）。`table` 是全部字段表格，不得携带 `fieldKey`；清单必须恰好包含一个 `table`。`board` 必须绑定一个存在的 select 字段（`fieldKey`），按该字段 options 分列；`graph` 必须绑定一个存在的 reference 字段，按该字段的序号列表建图。视图 key 使用小写英文 kebab-case 且不得重复，label 为非空单行；非 table 视图的 `kind + fieldKey` 组合不得重复。
+
+```json
+"views": [
+  { "key": "all", "label": "全部字段", "kind": "table" },
+  { "key": "status-board", "label": "状态看板", "kind": "board", "fieldKey": "status" },
+  { "key": "dependency-graph", "label": "依赖关系", "kind": "graph", "fieldKey": "dependencies" }
+]
+```
+
+页面严格按 `views` 的配置顺序和 label 展示入口，不会仅因字段类型自动增加看板或引用图入口：新增 select/reference 字段后，若希望它有看板或引用图，需在此显式登记。当前视图选择只保留在页面状态中，不写入本文件、URL 或浏览器存储；引用图节点位置仍按字段 key 独立持久化在浏览器内。
+
+旧配置省略 `views` 时无需手工迁移：读取自动按默认三视图（全部字段表格、核心 status 看板、核心 dependencies 引用图）生效，且不会回写本文件；一旦写入 `views` 就必须合法（上述全部约束），非法配置会带位置报错并拒绝相关写操作，不会被默认视图掩盖。可用任意文本编辑器维护本文件，保存后页面轮询会自动采用新配置。
+
 ### 三类字段
 
 - **markdown**：任意 Markdown 原文。字段说明放在 HTML 注释中，不算正式内容。`changes` 只是名称列表，不产生线程引用。
-- **select**：只能取 `options` 中一个值；非必填字段可空。页面提供选项控件及按选项分组的看板。
-- **reference**：只保存四位线程序号，一行一条 `- 0002`，有序去重；可指向不存在序号并显示悬空标记。页面提供增删、跳转及引用图。核心 `dependencies` 不约束状态，自定义 reference 也不会自动获得依赖工作流含义。
+- **select**：只能取 `options` 中一个值；非必填字段可空。页面提供选项控件；若字段被 `views` 配置为 board，则提供按选项分组的看板。
+- **reference**：只保存四位线程序号，一行一条 `- 0002`，有序去重；可指向不存在序号并显示悬空标记。页面提供增删与跳转；若字段被 `views` 配置为 graph，则提供引用图。核心 `dependencies` 不约束状态，自定义 reference 也不会自动获得依赖工作流含义。
 
 ## 创建与生成格式
 

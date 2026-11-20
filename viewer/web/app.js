@@ -2,7 +2,8 @@ import { html, render, useState, useEffect } from './vendor/preact-standalone.mo
 import { api } from './api.js';
 import { watchVisibleActivity } from './visibility.js';
 import { changeServiceMode, stopServiceWithConfirmation } from './service-controls.js';
-import { ThreadTable, UnfinishedView } from './views-table.js';
+import { ThreadTable } from './views-table.js';
+import { TABLE_VIEW, isViewValid, listProjection, viewsForSchema } from './view-state.js';
 import { BoardView } from './views-board.js';
 import { DepGraphView } from './dep-graph.js';
 import { ThreadDetail } from './detail.js';
@@ -16,22 +17,13 @@ import {
   normalizeUrlRoot,
 } from './project-state.js';
 
-const VIEWS = [
-  { key: 'table', label: '全部' },
-  { key: 'board', label: '看板' },
-  { key: 'unfinished', label: '未完成' },
-  { key: 'depgraph', label: '依赖图' },
-];
-
-// 线程列表投影：外部轮询只据此判断列表是否变化，指纹未变不重置状态
-const listProjection = (list) =>
-  (list ?? []).map((t) => `${t.id}${t.title}${t.status}${t.mtimeMs}${t.active ? 1 : 0}${t.error ?? ''}`).join('\n');
-
 function App() {
   const [projects, setProjects] = useState([]); // 全量项目（含 state），服务按 lastSeen 降序返回
   const [root, setRoot] = useState('');
-  const [view, setView] = useState('table');
+  const [view, setView] = useState({ ...TABLE_VIEW });
   const [threads, setThreads] = useState(null);
+  const [schema, setSchema] = useState(null);
+  const [schemaFingerprint, setSchemaFingerprint] = useState('');
   const [layout, setLayout] = useState(true); // 当前项目是否具备 kanban/ 结构
   const [selectedId, setSelectedId] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -100,12 +92,20 @@ function App() {
     confirm: (message) => window.confirm(message), stop: api.stop,
     setBusy, setMode, setNotice: setServiceNotice,
   });
+  const applyThreadData = (data) => {
+    setLayout(data.layout !== false);
+    const nextFingerprint = data.schemaFingerprint ?? '';
+    setThreads((previous) => listProjection({ schemaFingerprint, threads: previous }) === listProjection(data) ? previous : data.threads);
+    if (nextFingerprint !== schemaFingerprint) {
+      setSchema(data.schema ?? null);
+      setSchemaFingerprint(nextFingerprint);
+    }
+  };
   const refresh = async (r = root) => {
     if (!r) return;
     try {
       const data = await api.listThreads(r);
-      setThreads(data.threads);
-      setLayout(data.layout !== false); // 旧服务无该字段时视为已具备结构
+      applyThreadData(data);
       setError('');
     } catch (err) {
       setThreads(null);
@@ -127,6 +127,9 @@ function App() {
   useEffect(() => {
     setThreads(null);
     setSelectedId(null);
+    setView({ ...TABLE_VIEW });
+    setSchema(null);
+    setSchemaFingerprint('');
     setNotice('');
     setLayout(true);
     if (!root || !canWrite) return;
@@ -145,16 +148,22 @@ function App() {
         try {
           const data = await api.listThreads(root);
           if (gen !== poller.getGeneration()) return;
-          setLayout(data.layout !== false);
+          applyThreadData(data);
           setError('');
-          setThreads((prev) => (listProjection(prev) === listProjection(data.threads) ? prev : data.threads));
         } catch {
           // 列表读取失败不打扰当前视图；详情/便签的失败由各自控制器处理
         }
       },
     });
     return () => poller.destroy();
-  }, [root, currentState]);
+  }, [root, currentState, schemaFingerprint]);
+
+  useEffect(() => {
+    if (schema && !isViewValid(view, schema)) {
+      setView({ ...TABLE_VIEW });
+      setNotice('当前视图字段已在 schema 中失效，已回退到全部字段；未发送旧字段写请求。');
+    }
+  }, [schemaFingerprint]);
 
   const initProject = async () => {
     if (busy) return;
@@ -220,6 +229,7 @@ function App() {
 
   const activeThread = threads?.find((t) => t.active);
   const openThread = (id) => setSelectedId(id);
+  const views = viewsForSchema(schema);
 
   return html`
     <header>
@@ -234,12 +244,12 @@ function App() {
       <button disabled=${busy || !mode} onClick=${() => changeMode(mode === 'persistent' ? 'auto' : 'persistent')}>${mode === 'persistent' ? '取消常驻' : '常驻'}</button>
       <button class="danger" disabled=${busy || !mode} onClick=${stopService}>停止服务</button>
       <div class="tabs">
-        ${VIEWS.map((v) => html`
+        ${views.map((item) => html`
           <button
-            key=${v.key}
-            class=${view === v.key && !selectedId ? 'active' : ''}
-            onClick=${() => { setView(v.key); setSelectedId(null); }}
-          >${v.label}</button>
+            key=${item.key}
+            class=${view.kind === item.kind && view.fieldKey === item.fieldKey && !selectedId ? 'active' : ''}
+            onClick=${() => { setView(item.kind === 'table' ? { ...TABLE_VIEW } : { kind: item.kind, fieldKey: item.fieldKey }); setSelectedId(null); }}
+          >${item.label}</button>
         `)}
       </div>
       <button class="primary" onClick=${() => setShowCreate(true)} disabled=${!canWrite}>新建线程</button>
@@ -291,7 +301,7 @@ function App() {
             <button class="primary" disabled=${busy} onClick=${initProject}>初始化</button>
             <button disabled=${busy} onClick=${ignoreCurrent}>忽略</button>
           </div>
-          <div class="hint">初始化会创建最小看板结构（线程目录、模板、current 与便签）；忽略后自动发现不再登记该项目。</div>
+          <div class="hint">初始化会创建最小看板结构（线程目录、thread.schema.json、current 与便签）；忽略后自动发现不再登记该项目。</div>
           ${error && html`<div class="modal-error">${error}</div>`}
         </div>
       `}
@@ -310,14 +320,12 @@ function App() {
               onChanged=${() => refresh()}
               onRequestDelete=${(id) => setDeleteTarget({ root, id, title: threads.find((t) => t.id === id)?.title ?? id, active: activeThread?.id === id })}
             />
-          ` : view === 'board' ? html`
-            <${BoardView} root=${root} threads=${threads} onOpen=${openThread} onChanged=${() => refresh()} onError=${setError} />
-          ` : view === 'unfinished' ? html`
-            <${UnfinishedView} threads=${threads} onOpen=${openThread} />
-          ` : view === 'depgraph' ? html`
-            <${DepGraphView} root=${root} threads=${threads} onOpen=${openThread} onChanged=${() => refresh()} />
+          ` : view.kind === 'board' ? html`
+            <${BoardView} root=${root} threads=${threads} field=${schema?.fields.find((field) => field.key === view.fieldKey)} onOpen=${openThread} onChanged=${() => refresh()} onError=${setError} />
+          ` : view.kind === 'graph' ? html`
+            <${DepGraphView} root=${root} threads=${threads} fieldKey=${view.fieldKey} onOpen=${openThread} onChanged=${() => refresh()} />
           ` : html`
-            <${ThreadTable} threads=${threads} onOpen=${openThread} />
+            <${ThreadTable} root=${root} threads=${threads} schema=${schema} onOpen=${openThread} onChanged=${() => refresh()} />
           `}
         `}
       `}

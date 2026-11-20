@@ -383,6 +383,15 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await threads.getThread(root, id));
     }
 
+    if (req.method === 'PUT' && url.pathname === '/api/thread/field') {
+      if (!guardSameOriginJson(req, res)) return;
+      const body = await readJsonBody(req);
+      const result = await threads.updateFieldRequest(
+        requireRegisteredRoot(body.root), requireId(body.id), body.fieldKey, body, body.fingerprint,
+      );
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === 'PUT' && url.pathname === '/api/thread/section') {
       const body = await readJsonBody(req);
       const result = await threads.updateSection(

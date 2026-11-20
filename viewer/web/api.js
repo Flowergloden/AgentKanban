@@ -33,6 +33,10 @@ export const api = {
   init: (root) => request('/api/init', jsonOptions('POST', { root })),
   listThreads: (root) => request(`/api/threads${q(root)}`),
   getThread: (root, id) => request(`/api/thread${q(root)}&id=${encodeURIComponent(id)}`),
+  updateField: (root, id, fieldKey, value, fingerprint) =>
+    request('/api/thread/field', jsonOptions('PUT', { root, id, fieldKey, value, fingerprint })),
+  updateFieldContent: (root, id, fieldKey, content, fingerprint) =>
+    request('/api/thread/field', jsonOptions('PUT', { root, id, fieldKey, content, fingerprint })),
   updateSection: (root, id, section, content, fingerprint) =>
     request('/api/thread/section', jsonOptions('PUT', { root, id, section, content, fingerprint })),
   setStatus: (root, id, status) =>

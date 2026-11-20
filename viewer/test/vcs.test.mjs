@@ -181,7 +181,7 @@ test('create 返回 created 列表（含 ensureLayout 与卷宗，排除临时�
   assert.equal(id, '0001-created-thread');
   assert.ok(created.includes('kanban/current'));
   assert.ok(created.includes('kanban/note.md'));
-  assert.ok(created.includes('kanban/templates/thread.md'));
+  assert.ok(created.includes('kanban/thread.schema.json'));
   assert.ok(created.includes(relThread(id)));
   assert.ok(created.every((f) => !f.endsWith('.tmp')));
 });

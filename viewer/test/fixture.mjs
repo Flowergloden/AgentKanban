@@ -24,7 +24,7 @@ export async function withServer(t, body, { isolatedCopy = false, env: extraEnv 
   if (isolatedCopy) {
     await mkdir(path.join(root, 'server'), { recursive: true });
     await mkdir(path.join(root, 'web'));
-    for (const file of ['server.mjs', 'metadata.mjs', 'registry.mjs', 'lock.mjs', 'lifecycle.mjs', 'threads.mjs', 'vcs.mjs'])
+    for (const file of ['server.mjs', 'metadata.mjs', 'registry.mjs', 'lock.mjs', 'lifecycle.mjs', 'threads.mjs', 'thread-document.mjs', 'schema.mjs', 'field-types.mjs', 'vcs.mjs'])
       await copyFile(path.join(viewer, 'server', file), path.join(root, 'server', file));
     await copyFile(path.join(viewer, 'service.json'), path.join(root, 'service.json'));
   }

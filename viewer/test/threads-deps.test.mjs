@@ -65,7 +65,7 @@ test('updateSection 补建缺失的 `依赖` 小节：成功且其余内容一�
   const { fingerprint } = await threads.updateSection(root, a.id, '依赖', '- 0001', detail.fingerprint);
   const updated = await readFile(file, 'utf8');
   assert.ok(updated.startsWith(withoutDeps.replace(/(\r?\n)*$/, '\n\n')));
-  assert.match(updated, /## 依赖\n\n- 0001\n$/);
+  assert.match(updated, /## 依赖\n\n<!-- kanban:field=dependencies -->\n<!--[\s\S]*?-->\n\n- 0001\n$/);
   assert.equal(fingerprint, threads.fingerprint(updated));
   // 其余部分一字不改
   assert.equal(updated.slice(0, withoutDeps.length - 1), withoutDeps.slice(0, -1));

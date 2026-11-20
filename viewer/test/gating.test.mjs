@@ -35,6 +35,7 @@ test('pending/ignored/unregistered roots are rejected from kanban writes with fs
       fetch(url + '/api/vcs/add', json('POST', { root, files: ['kanban/x.txt'] })),
       fetch(`${url}/api/threads/0001-x/rename`, json('POST', { root, slug: 'y' })),
       fetch(url + '/api/thread', json('DELETE', { root, id: '0001-x' })),
+      fetch(url + '/api/thread/field', json('PUT', { root, id: '0001-x', fieldKey: 'goal', content: 'x', fingerprint: 'x' })), 
     ];
     for (const root of [pendingRoot, ignoredRoot, neverRoot]) {
       const responses = await Promise.all(writeAttempts(root));
@@ -64,7 +65,7 @@ test('registered root keeps idempotent init and write ops auto-ensure missing la
 
     // 首次 init 创建完整最小结构，重复 init 幂等返回空
     const first = await (await post('/api/init', { root })).json();
-    for (const rel of ['kanban', 'kanban/threads', 'kanban/templates', 'kanban/templates/thread.md', 'kanban/current', 'kanban/note.md'])
+    for (const rel of ['kanban', 'kanban/threads', 'kanban/thread.schema.json', 'kanban/current', 'kanban/note.md'])
       assert.ok(first.created.includes(rel), rel);
     const again = await (await post('/api/init', { root })).json();
     assert.deepEqual(again.created, []);
@@ -78,7 +79,8 @@ test('registered root keeps idempotent init and write ops auto-ensure missing la
     await rm(path.join(root, 'kanban'), { recursive: true, force: true });
     const created = await (await post('/api/threads', { root, title: '自动补齐', slug: 'auto-ensure' })).json();
     assert.equal(created.id, '0001-auto-ensure');
-    assert.ok(created.created.includes('kanban/templates/thread.md'));
+    assert.ok(created.created.includes('kanban/thread.schema.json'));
+    assert.ok(!created.created.some((file) => file.includes('templates')));
     assert.equal((await post('/api/active-thread', { root, id: created.id })).status, 200);
     const note = await (await fetch(url + `/api/note?root=${encodeURIComponent(canonicalRoot(root))}`)).json();
     const saved = await fetch(url + '/api/note', json('PUT', { root, content: '便签内容', fingerprint: note.fingerprint }));

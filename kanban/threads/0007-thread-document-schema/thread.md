@@ -24,6 +24,7 @@ status: 规划
 <!-- （可选）关联的 OpenSpec change 名字列表，仅当本线程使用 OpenSpec 工作流时才登记；不使用时留空即可。一行一条（仅名字，松耦合引用），例如：
 - add-xxx
 -->
+- add-thread-document-schema
 
 ## 依赖
 

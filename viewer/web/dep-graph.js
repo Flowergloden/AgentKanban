@@ -1,7 +1,7 @@
 import { html, useState, useEffect, useMemo, useRef } from './vendor/preact-standalone.module.js';
 import { api } from './api.js';
 
-// 节点尺寸与布局间距（被依赖方在上层，层内横向均布）
+// 节点尺寸与布局间距（被引用方在上层，层内横向均布）
 const NODE_W = 170;
 const NODE_H = 50;
 const GHOST_W = 76;
@@ -18,11 +18,10 @@ const STATUS_COLORS = {
   完成: '#e7ebf0',
 };
 
-// 位置持久化：localStorage，按「项目根+线程标识」键控，不写入 kanban/
-const posKey = (root, key) => `kanban-dep-graph:${root.replace(/\\/g, '/')}:${key}`;
+export const posKey = (root, fieldKey, key) => `kanban-ref-graph:${root.replace(/\\/g, '/')}:${fieldKey}:${key}`;
 
-function loadManualPositions(root) {
-  const prefix = posKey(root, '');
+function loadManualPositions(root, fieldKey) {
+  const prefix = posKey(root, fieldKey, '');
   const out = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
@@ -36,8 +35,8 @@ function loadManualPositions(root) {
   return out;
 }
 
-// 图模型派生：实体节点 + 悬空序号的幽灵节点；边由列表接口 deps 派生（A.deps 含 B 序号即 A→B）
-function buildModel(threads) {
+// 图模型由所选 reference 字段派生，实体节点与悬空节点共用同一字段投影。
+export function buildModel(threads, fieldKey = 'dependencies') {
   const nodes = threads.map((t) => ({
     key: t.id, id: t.id, num: t.id.slice(0, 4), title: t.title,
     status: t.status, active: t.active, ghost: false,
@@ -46,7 +45,7 @@ function buildModel(threads) {
   const edges = [];
   const ghostNums = [];
   for (const t of threads) {
-    for (const num of t.deps ?? []) {
+    for (const num of [...new Set(t.fields?.[fieldKey] ?? [])]) {
       const target = byNum.get(num);
       if (target) {
         if (target.key !== t.id) edges.push({ from: t.id, to: target.key, toNum: num });
@@ -57,7 +56,7 @@ function buildModel(threads) {
   }
   const ghosts = ghostNums.map((num) => ({ key: `ghost:${num}`, num, ghost: true }));
   for (const t of threads) {
-    for (const num of t.deps ?? []) {
+    for (const num of [...new Set(t.fields?.[fieldKey] ?? [])]) {
       if (!byNum.has(num)) edges.push({ from: t.id, to: `ghost:${num}`, toNum: num });
     }
   }
@@ -65,7 +64,7 @@ function buildModel(threads) {
 }
 
 // DFS 检环：返回环路上的节点 key 与边对象集合；成环仅标记不禁止
-function findCycles(nodes, edges) {
+export function findCycles(nodes, edges) {
   const adj = new Map(nodes.map((n) => [n.key, []]));
   for (const e of edges) if (adj.has(e.from) && adj.has(e.to)) adj.get(e.from).push(e);
   const color = new Map(); // 1=在栈上 2=已完成
@@ -113,7 +112,7 @@ function computeAutoPositions(nodes, edges) {
     return d;
   };
   for (const n of nodes) if (!n.ghost) dfs(n.key);
-  // 幽灵节点只有入边：置于其依赖方上一层
+  // 幽灵节点只有入边：置于其引用方上一层
   for (const n of nodes) {
     if (!n.ghost) continue;
     let d = Infinity;
@@ -149,7 +148,7 @@ function clipEdge(cx, cy, tx, ty, w, h) {
 
 const nodeSize = (n) => (n.ghost ? [GHOST_W, GHOST_H] : [NODE_W, NODE_H]);
 
-export function DepGraphView({ root, threads, onOpen, onChanged }) {
+export function DepGraphView({ root, threads, fieldKey = 'dependencies', onOpen, onChanged }) {
   const [manual, setManual] = useState({});
   const [drag, setDrag] = useState(null); // { key, mode: 'move'|'connect', offX, offY, moved, x, y }
   const [error, setError] = useState('');
@@ -157,9 +156,9 @@ export function DepGraphView({ root, threads, onOpen, onChanged }) {
   const [busy, setBusy] = useState(false);
   const svgRef = useRef(null);
 
-  useEffect(() => { setManual(loadManualPositions(root)); setError(''); setConflict(false); }, [root]);
+  useEffect(() => { setManual(loadManualPositions(root, fieldKey)); setError(''); setConflict(false); }, [root, fieldKey]);
 
-  const { nodes, edges } = useMemo(() => buildModel(threads), [threads]);
+  const { nodes, edges } = useMemo(() => buildModel(threads, fieldKey), [threads, fieldKey]);
   const { cycleNodes, cycleEdges } = useMemo(() => findCycles(nodes, edges), [nodes, edges]);
   const autoPos = useMemo(() => computeAutoPositions(nodes, edges), [nodes, edges]);
 
@@ -205,7 +204,7 @@ export function DepGraphView({ root, threads, onOpen, onChanged }) {
           // 落盘 localStorage（仅浏览器侧，kanban/ 零写入）
           const next = { ...manual, [d.key]: { x: Math.round(nx), y: Math.round(ny) } };
           setManual(next);
-          localStorage.setItem(posKey(root, d.key), JSON.stringify(next[d.key]));
+          localStorage.setItem(posKey(root, fieldKey, d.key), JSON.stringify(next[d.key]));
         } else if (!d.key.startsWith('ghost:')) {
           onOpen(d.key); // 原地点击：跳转该线程详情
         }
@@ -226,9 +225,8 @@ export function DepGraphView({ root, threads, onOpen, onChanged }) {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [drag, manual, nodes, root]);
+  }, [drag, manual, nodes, root, fieldKey]);
 
-  // 建边：读 A 详情取指纹 → 在 `## 依赖` 净内容末尾追加 B 序号行 → 小节更新接口（缺小节时接口自动补建）→ 刷新图
   const addDep = async (fromId, toNum) => {
     if (busy) return;
     setBusy(true);
@@ -236,33 +234,31 @@ export function DepGraphView({ root, threads, onOpen, onChanged }) {
     setConflict(false);
     try {
       const detail = await api.getThread(root, fromId);
-      const body = (detail.sections['依赖'] ?? '').trim();
-      await api.updateSection(root, fromId, '依赖', (body ? body + '\n' : '') + `- ${toNum}`, detail.fingerprint);
+      const values = detail.fields[fieldKey]?.value ?? [];
+      if (!values.includes(toNum)) await api.updateField(root, fromId, fieldKey, [...values, toNum], detail.fingerprint);
       await onChanged();
     } catch (err) {
       if (err.status === 409) setConflict(true);
-      else setError(`建立依赖失败：${err.message}`);
+      else setError(`建立引用失败：${err.message}`);
     } finally {
       setBusy(false);
     }
   };
 
-  // 删边：从 A 的 `## 依赖` 移除对应序号行（点选边后确认）
   const removeDep = async (edge) => {
     if (busy) return;
-    if (!window.confirm(`删除依赖：${edge.from} → ${edge.toNum}？`)) return;
+    if (!window.confirm(`删除引用：${edge.from} → ${edge.toNum}？`)) return;
     setBusy(true);
     setError('');
     setConflict(false);
     try {
       const detail = await api.getThread(root, edge.from);
-      const kept = (detail.sections['依赖'] ?? '').split('\n')
-        .filter((l) => l.trim() && l.match(/\d{4}/)?.[0] !== edge.toNum);
-      await api.updateSection(root, edge.from, '依赖', kept.join('\n'), detail.fingerprint);
+      const kept = (detail.fields[fieldKey]?.value ?? []).filter((num) => num !== edge.toNum);
+      await api.updateField(root, edge.from, fieldKey, kept, detail.fingerprint);
       await onChanged();
     } catch (err) {
       if (err.status === 409) setConflict(true);
-      else setError(`删除依赖失败：${err.message}`);
+      else setError(`删除引用失败：${err.message}`);
     } finally {
       setBusy(false);
     }
@@ -289,7 +285,7 @@ export function DepGraphView({ root, threads, onOpen, onChanged }) {
       </div>
     `}
     ${edges.length === 0 && html`
-      <div class="hint">暂无依赖关系：从节点右侧连接柄拖出连线、落到另一节点即可建立「A 依赖 B」；点选已有连线可删除。拖节点空白处可调整位置（仅存浏览器本地）。</div>
+      <div class="hint">暂无引用关系：从节点右侧连接柄拖出连线、落到另一节点即可建立「A 引用 B」；点选已有连线可删除。拖节点空白处可调整位置（仅存浏览器本地）。</div>
     `}
     <div class="dep-graph-wrap">
       <svg ref=${svgRef} width=${maxX} height=${maxY} style="display:block">
@@ -322,12 +318,12 @@ export function DepGraphView({ root, threads, onOpen, onChanged }) {
           const stroke = inCycle ? '#cf222e' : '#57606a';
           return html`
             <g key=${`${e.from}->${e.to}`}>
-              ${inCycle && html`<title>依赖成环</title>`}
+              ${inCycle && html`<title>引用成环</title>`}
               <path d=${`M ${x1} ${y1} L ${x2} ${y2}`} stroke=${stroke} stroke-width=${inCycle ? 2.5 : 1.5}
                 fill="none" marker-end=${`url(#${inCycle ? 'dep-arrow-cycle' : 'dep-arrow'})`}></path>
               <path d=${`M ${x1} ${y1} L ${x2} ${y2}`} stroke="transparent" stroke-width="12" fill="none"
                 style="cursor:pointer" onClick=${() => removeDep(e)}>
-                <title>${inCycle ? '依赖成环；' : ''}点击删除依赖 ${e.from} → ${e.toNum}</title>
+                <title>${inCycle ? '引用成环；' : ''}点击删除引用 ${e.from} → ${e.toNum}</title>
               </path>
             </g>
           `;
@@ -358,7 +354,7 @@ export function DepGraphView({ root, threads, onOpen, onChanged }) {
           const title = n.title.length > 9 ? n.title.slice(0, 9) + '…' : n.title;
           return html`
             <g key=${n.key} class="dep-node" onMouseDown=${(e) => startDrag(n, 'move', e)}>
-              ${inCycle && html`<title>依赖成环</title>`}
+              ${inCycle && html`<title>引用成环</title>`}
               <rect x=${p.x} y=${p.y} width=${w} height=${h} rx="8"
                 fill=${STATUS_COLORS[n.status] ?? '#f6f8fa'}
                 stroke=${inCycle ? '#cf222e' : n.active ? '#1a7f37' : '#d0d7de'}
@@ -369,7 +365,7 @@ export function DepGraphView({ root, threads, onOpen, onChanged }) {
               <text x=${p.x + 10} y=${p.y + 38} font-size="13" fill="#1f2328">${title}</text>
               <circle class="dep-handle" cx=${p.x + w} cy=${p.y + h / 2} r="6"
                 onMouseDown=${(e) => startDrag(n, 'connect', e)}>
-                <title>拖出连线以建立依赖</title>
+                <title>拖出连线以建立引用</title>
               </circle>
             </g>
           `;

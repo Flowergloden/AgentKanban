@@ -39,7 +39,7 @@ export function CreateModal({ root, onClose, onCreated }) {
         <h3>新建线程</h3>
         <label>标题（必填）</label>
         <input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder="例如：视图体系探索" autoFocus />
-        <label>目标（选填）：这条线程要达成的笼统目标，写入卷宗「目标」小节（支持 Markdown 与任务清单）</label>
+        <label>目标（选填）：写入核心 goal 字段（默认小节为「目标」，支持 Markdown 与任务清单）</label>
         <${MarkdownLiveEditor}
           className="goal-editor"
           value=${goal}

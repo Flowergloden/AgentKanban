@@ -4,6 +4,7 @@ context: |
   Language: Chinese
   All artifacts must be written in Chinese.
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Kanban integration: 通过 openspec-propose 创建 change 后，若当前项目根存在 kanban/ 且 kanban/current 指向有效活跃线程，Agent SHALL 在生成规划工件期间将 change 原名（不含归档日期前缀）登记到该线程 thread.md 的 ## Changes 列表。先检查是否已有完全相同的条目；有则跳过，无则追加一行 - <change-name>，写后重新读取确认。此登记无需询问用户，不修改其他线程；无活跃线程时跳过。登记失败不阻塞 OpenSpec 工作流，但 SHALL 在最终回复中说明。
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
@@ -19,6 +20,11 @@ context: |
 # Add advisory guidance for how apply and archive work should be conducted.
 # This is separate from artifact rules above.
 operations:
+  apply:
+    guidance:
+      - >-
+        选择 change 后、开始实现前，若当前项目根存在 kanban/ 且 kanban/current 指向有效活跃线程，必须将该 change 原名（不含归档日期前缀）登记到该线程 thread.md 的 ## Changes 列表，以补齐 propose 阶段可能的漏记。先检查是否已有完全相同的条目；有则跳过，无则追加一行 - <change-name>，写后重新读取确认。此登记无需询问用户，不修改其他线程；无活跃线程时跳过。登记失败不阻塞实现，但必须在最终回复中说明。
   archive:
     guidance:
-      - 归档完成后，若被归档的 change 出现在某线程卷宗（kanban/threads/*/thread.md）的 ## Changes 列表中，则从该 change 的工件（proposal、design、tasks）蒸馏出一小段总结（动机、关键决定、完成情况），追加到该线程卷宗的 ## 已完成的工作；若 change 不属于任何线程，则不执行蒸馏动作。
+      - >-
+        归档移动成功后、输出最终总结前，必须检查 kanban/threads/*/thread.md 的 ## Changes 列表。若被归档的 change 原名出现在某线程的列表中，则从归档新位置读取该 change 的 proposal、design、tasks（存在的工件），蒸馏出一小段含日期、动机、关键决定和完成情况的总结，追加到该线程卷宗的 ## 已完成的工作并重新读取确认；若 change 不属于任何线程，则不执行蒸馏动作。卷宗记录失败不阻塞已完成的归档，但必须在最终回复中说明。

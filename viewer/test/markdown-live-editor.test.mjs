@@ -110,18 +110,26 @@ test('planBlockWidgets：光标所在区块保持原文，其余区块规划渲�
   assert.deepEqual(plan.widgets.map((w) => [w.from, w.to]), [[0, 4], [p1, p1 + 3]]);
 });
 
-test('planBlockWidgets：列表仅当前列表项保持原文，其余项按连续片段渲染', () => {
+test('planBlockWidgets：列表项独立渲染，仅当前列表项保持原文', () => {
   for (const items of [['- 甲', '- 乙', '- 丙'], ['1. 甲', '2. 乙', '3. 丙']]) {
     const doc = items.join('\n');
     const ranges = items.map((text) => {
       const from = doc.indexOf(text);
       return [from, from + text.length];
     });
-    const session = createEditorSession({ value: doc, render: fakeRender });
-    session.select(ranges[1][0] + 1);
-    const plan = planBlockWidgets(session.state, { render: fakeRender });
+    const session = createEditorSession({ value: doc + '\n\n后段', render: fakeRender });
+    session.select(doc.length + 2);
+    let plan = planBlockWidgets(session.state, { render: fakeRender });
     assert.equal(plan.ok, true);
-    assert.deepEqual(plan.widgets.map((w) => [w.from, w.to]), [ranges[0], ranges[2]]);
+    assert.deepEqual(
+      plan.widgets.map((w) => [w.from, w.to]),
+      ranges,
+      '列表外点击时，每个列表项都应有独立的坐标映射范围',
+    );
+
+    session.select(ranges[1][0] + 1);
+    plan = planBlockWidgets(session.state, { render: fakeRender });
+    assert.deepEqual(plan.widgets.map((w) => [w.from, w.to]), [ranges[0], ranges[2], [doc.length + 2, doc.length + 4]]);
   }
 });
 
@@ -149,10 +157,17 @@ test('planBlockWidgets 覆盖标题、强调、列表、引用、代码与表格
   ];
   const doc = parts.join('\n\n') + '\n';
   const active = 4; // 强调段为活动区块（光标在其中）
-  const expected = parts.map((text, i) => {
+  const expected = parts.flatMap((text, i) => {
+    if (i === active) return [];
     const from = doc.indexOf(text);
-    return [from, from + text.length, i];
-  }).filter(([, , i]) => i !== active).map(([from, to]) => [from, to]);
+    if (i !== 3) return [[from, from + text.length]];
+    let lineFrom = from;
+    return text.split('\n').map((line) => {
+      const range = [lineFrom, lineFrom + line.length];
+      lineFrom += line.length + 1;
+      return range;
+    });
+  });
   const session = createEditorSession({ value: doc, render: fakeRender });
   session.select(doc.indexOf(parts[active]) + 1);
   const plan = planBlockWidgets(session.state, { render: fakeRender });

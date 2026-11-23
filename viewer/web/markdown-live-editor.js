@@ -178,7 +178,7 @@ function editRangesForBlock(node, doc) {
 }
 
 // 纯计算：为 [from, to]（通常为视口）内的非活动可渲染区块规划 widget 装饰。
-// 段落按物理行、列表按直接列表项暴露活动原文；其余连续单元合并渲染，保持列表上下文。
+// 段落按物理行、列表按直接列表项暴露活动原文；列表项独立渲染以保留坐标映射，其余连续单元合并渲染。
 // render 可注入；渲染不可用或失败返回 { ok: false, error }，调用方回退源码模式。
 export function planBlockWidgets(state, { from = 0, to = state.doc.length, render = renderMarkdown, stats = liveEditorStats } = {}) {
   ensureSyntaxTree(state, state.doc.length, 200);
@@ -205,12 +205,18 @@ export function planBlockWidgets(state, { from = 0, to = state.doc.length, rende
     if (!RENDERABLE_BLOCKS.has(node.name)) continue;
     if (node.to < from || node.from > to) continue;
     const editRanges = editRangesForBlock(node, doc);
+    const independentRanges = node.name === 'BulletList' || node.name === 'OrderedList';
     let renderFrom = -1;
     for (let index = 0; index <= editRanges.length; index += 1) {
       const range = editRanges[index];
       const active = range && ranges.some((selection) => selection.from <= range.to && selection.to >= range.from);
       if (range && !active) {
-        if (renderFrom < 0) renderFrom = range.from;
+        if (independentRanges) {
+          const result = appendWidget(range.from, range.to);
+          if (!result.ok) return { ok: false, error: result.error };
+        } else if (renderFrom < 0) {
+          renderFrom = range.from;
+        }
         continue;
       }
       if (renderFrom >= 0) {

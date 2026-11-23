@@ -40,6 +40,27 @@ export async function currentVersion(repo) {
   return distinct[0];
 }
 
+async function committedVersion(repo, revision) {
+  const seen = await Promise.all(versionFiles.map(async (rel) => ({
+    rel,
+    version: JSON.parse(await git(repo, ['show', `${revision}:${rel}`])).version,
+  })));
+  const distinct = [...new Set(seen.map((entry) => entry.version))];
+  if (distinct.length !== 1)
+    throw new Error(`提交 ${revision} 的版本清单不一致: ${seen.map((entry) => `${entry.rel}=${entry.version}`).join(', ')}`);
+  return distinct[0];
+}
+
+async function latestCommitChangedVersion(repo, current) {
+  const parents = (await git(repo, ['rev-list', '--parents', '-n', '1', 'HEAD'])).split(/\s+/);
+  if (parents.length < 2) return false;
+  const [head, parent] = await Promise.all([
+    committedVersion(repo, 'HEAD'),
+    committedVersion(repo, 'HEAD^'),
+  ]);
+  return head === current && head !== parent;
+}
+
 export async function rewriteVersion(repo, from, to) {
   const targets = [...versionFiles];
   const testDir = path.join(repo, 'viewer', 'test');
@@ -58,35 +79,41 @@ export async function rewriteVersion(repo, from, to) {
   return changed;
 }
 
-export async function publish({ repo, version, confirm, remote = 'origin' }) {
+export async function publish({ repo, version, confirm, remote = 'origin', local = false }) {
   await git(repo, ['rev-parse', '--is-inside-work-tree']);
   const from = await currentVersion(repo);
-  const to = version ? parseVersion(version) : nextPatch(from);
+  const reuseCurrentVersion = !version && await latestCommitChangedVersion(repo, from);
+  const to = version ? parseVersion(version) : reuseCurrentVersion ? from : nextPatch(from);
   const tag = `v${to}`;
-  if (to === from) throw new Error(`新版本与当前版本相同: ${to}（可传入参数指定其他版本号）`);
+  if (!reuseCurrentVersion && to === from) throw new Error(`新版本与当前版本相同: ${to}（可传入参数指定其他版本号）`);
   if (await git(repo, ['tag', '-l', tag])) throw new Error(`tag ${tag} 已存在`);
   const branch = await git(repo, ['branch', '--show-current']);
   if (!branch) throw new Error('detached HEAD 状态，请先切换到分支再发版');
   const status = await git(repo, ['status', '--porcelain']);
   const dirty = status ? status.split('\n') : [];
 
-  console.log(`发版计划: ${from} -> ${to} (${tag})，分支 ${branch} -> ${remote}`);
-  console.log(`提交信息: ${releaseMessage(to)}`);
+  console.log(`发版计划: ${from} -> ${to} (${tag})，分支 ${branch}${local ? '（仅本地提交与 tag，不推送）' : ` -> ${remote}`}`);
+  console.log(reuseCurrentVersion ? '最新提交已更新版本号，复用当前提交，不再递增或创建版本提交' : `提交信息: ${releaseMessage(to)}`);
   if (dirty.length > 0) {
     console.log(`警告: 本地有 ${dirty.length} 处未提交的更改:`);
     for (const line of dirty) console.log(`  ${line}`);
-    if (!confirm || !await confirm(`仍要继续发版 ${tag} 吗？只会提交版本相关文件，其余更改保持未提交。[y/N] `))
+    const dirtyAction = reuseCurrentVersion ? '所有更改保持未提交' : '只会提交版本相关文件，其余更改保持未提交';
+    if (!confirm || !await confirm(`仍要继续发版 ${tag} 吗？${dirtyAction}。[y/N] `))
       throw new Error('已取消: 本地存在未提交的更改');
   }
 
-  const changed = await rewriteVersion(repo, from, to);
+  const changed = reuseCurrentVersion ? [] : await rewriteVersion(repo, from, to);
   const message = releaseMessage(to);
-  await git(repo, ['commit', '-m', message, '--', ...changed]);
+  if (!reuseCurrentVersion) await git(repo, ['commit', '-m', message, '--', ...changed]);
   await git(repo, ['tag', '-a', tag, '-m', message]);
-  await git(repo, ['push', remote, branch]);
-  await git(repo, ['push', remote, tag]);
-  console.log(`完成: ${tag} 已推送，CI 将基于该 tag 构建 Release`);
-  return { from, to, tag, branch, changed, dirty: dirty.length };
+  if (local) {
+    console.log(`完成: ${tag} 已在本地创建，未推送`);
+  } else {
+    await git(repo, ['push', remote, branch]);
+    await git(repo, ['push', remote, tag]);
+    console.log(`完成: ${tag} 已推送，CI 将基于该 tag 构建 Release`);
+  }
+  return { from, to, tag, branch, changed, dirty: dirty.length, local };
 }
 
 async function confirmInteractive(question) {
@@ -97,12 +124,27 @@ async function confirmInteractive(question) {
   finally { rl.close(); }
 }
 
+export function parseArgs(args) {
+  let local = false;
+  let version;
+  for (const arg of args) {
+    if (arg === '--local') {
+      if (local) throw new Error('usage: node scripts/publish.mjs [--local] [vX.Y.Z]');
+      local = true;
+    } else {
+      if (version !== undefined || arg.startsWith('-')) throw new Error('usage: node scripts/publish.mjs [--local] [vX.Y.Z]');
+      version = arg;
+    }
+  }
+  return { local, version };
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const repo = fileURLToPath(new URL('..', import.meta.url));
   try {
-    if (args.length > 1) throw new Error('usage: node scripts/publish.mjs [vX.Y.Z]');
-    await publish({ repo, version: args[0] || undefined, confirm: confirmInteractive });
+    const { local, version } = parseArgs(args);
+    await publish({ repo, version, local, confirm: confirmInteractive });
   } catch (error) {
     console.error(`发版失败: ${error.message}`);
     process.exitCode = 1;

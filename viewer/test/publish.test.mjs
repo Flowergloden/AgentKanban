@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { currentVersion, nextPatch, parseVersion, publish, rewriteVersion } from '../../scripts/publish.mjs';
+import { currentVersion, nextPatch, parseArgs, parseVersion, publish, rewriteVersion } from '../../scripts/publish.mjs';
 
 const exec = promisify(execFile);
 const versionFiles = ['kimi.plugin.json', '.codex-plugin/plugin.json', '.claude-plugin/plugin.json', 'service.json'];
@@ -43,6 +43,13 @@ async function fixtureRepo(t, { version = '0.2.17' } = {}) {
   return { repo, remote };
 }
 
+async function commitVersion(repo, to) {
+  const from = await currentVersion(repo);
+  const changed = await rewriteVersion(repo, from, to);
+  await git(repo, ['commit', '-qm', `bump ${to}`, '--', ...changed]);
+  return git(repo, ['rev-parse', 'HEAD']);
+}
+
 test('parseVersion 接受 X.Y.Z 与 vX.Y.Z，拒绝其他格式', () => {
   assert.equal(parseVersion('1.2.3'), '1.2.3');
   assert.equal(parseVersion('v0.2.17'), '0.2.17');
@@ -54,6 +61,14 @@ test('parseVersion 接受 X.Y.Z 与 vX.Y.Z，拒绝其他格式', () => {
 test('nextPatch 递增小版本号', () => {
   assert.equal(nextPatch('0.2.17'), '0.2.18');
   assert.equal(nextPatch('v1.9.9'), '1.9.10');
+});
+
+test('parseArgs 识别 --local 与可选版本号并拒绝无效参数', () => {
+  assert.deepEqual(parseArgs([]), { local: false, version: undefined });
+  assert.deepEqual(parseArgs(['--local']), { local: true, version: undefined });
+  assert.deepEqual(parseArgs(['v1.2.3', '--local']), { local: true, version: 'v1.2.3' });
+  for (const bad of [['--local', '--local'], ['1.2.3', '2.0.0'], ['--unknown']])
+    assert.throws(() => parseArgs(bad), /usage:/);
 });
 
 test('rewriteVersion 更新五份清单与测试样例，保留其他版本字面量', async (t) => {
@@ -96,6 +111,39 @@ test('干净工作区: 留空版本号自动小版本号+1，提交、注解 tag
   assert.ok((await exec('git', ['-C', remote, 'tag'])).stdout.includes('v0.2.18'));
   const branch = await git(repo, ['branch', '--show-current']);
   assert.ok((await exec('git', ['-C', remote, 'branch', '--list', branch])).stdout.includes(branch));
+});
+
+test('--local 只在本地提交并打 tag，不推送分支或 tag', async (t) => {
+  const { repo, remote } = await fixtureRepo(t);
+  const result = await publish({ repo, local: true, confirm: async () => true });
+  assert.equal(result.local, true);
+  assert.equal(result.to, '0.2.18');
+  assert.equal(await git(repo, ['tag', '-l']), 'v0.2.18');
+  assert.match(await git(repo, ['log', '-1', '--format=%s']), /版本号更新至 0\.2\.18/);
+  assert.equal((await exec('git', ['-C', remote, 'tag'])).stdout.trim(), '');
+  assert.equal((await exec('git', ['-C', remote, 'branch', '--list'])).stdout.trim(), '');
+});
+
+test('最新提交已更新版本号时复用当前版本与提交，不再自动递增', async (t) => {
+  const { repo, remote } = await fixtureRepo(t);
+  const versionCommit = await commitVersion(repo, '0.2.18');
+  const result = await publish({ repo, confirm: async () => true });
+  assert.deepEqual({ from: result.from, to: result.to, changed: result.changed },
+    { from: '0.2.18', to: '0.2.18', changed: [] });
+  assert.equal(await git(repo, ['rev-parse', 'HEAD']), versionCommit);
+  assert.equal(await git(repo, ['rev-parse', 'v0.2.18^{}']), versionCommit);
+  assert.equal(await git(repo, ['log', '-1', '--format=%s']), 'bump 0.2.18');
+  assert.ok((await exec('git', ['-C', remote, 'tag'])).stdout.includes('v0.2.18'));
+});
+
+test('最新提交已更新版本号时，显式版本参数仍按指定版本递增', async (t) => {
+  const { repo } = await fixtureRepo(t);
+  const versionCommit = await commitVersion(repo, '0.2.18');
+  const result = await publish({ repo, version: 'v0.2.20', confirm: async () => true });
+  assert.deepEqual({ from: result.from, to: result.to }, { from: '0.2.18', to: '0.2.20' });
+  assert.notEqual(await git(repo, ['rev-parse', 'HEAD']), versionCommit);
+  assert.equal(await git(repo, ['tag', '-l']), 'v0.2.20');
+  assert.equal(await currentVersion(repo), '0.2.20');
 });
 
 test('tag 已存在时中止', async (t) => {

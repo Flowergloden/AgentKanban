@@ -21,10 +21,10 @@ test('numeric version comparison never mistakes older client for upgrade', () =>
 });
 
 for (const [label, health, behavior] of [
-  ['same', { version: '0.2.22', protocolVersion: 1, mode: 'auto' }, 'reuse'],
-  ['newer', { version: '0.2.22', protocolVersion: 1, mode: 'auto' }, 'reuse'],
-  ['incompatible', { version: '0.2.22', protocolVersion: 2, mode: 'auto' }, 'reject'],
-  ['legacy not older', { version: '0.2.22' }, 'reuse-legacy'],
+  ['same', { version: '3.0.0', protocolVersion: 1, mode: 'auto' }, 'reuse'],
+  ['newer', { version: '3.0.0', protocolVersion: 1, mode: 'auto' }, 'reuse'],
+  ['incompatible', { version: '3.0.0', protocolVersion: 2, mode: 'auto' }, 'reject'],
+  ['legacy not older', { version: '3.0.0' }, 'reuse-legacy'],
   ['legacy older', { version: '0.1.0' }, 'upgrade'],
 ]) {
   test(`protocol negotiation: ${label}`, async (t) => {

@@ -86,14 +86,18 @@ export async function publish({ repo, version, confirm, remote = 'origin', local
   const to = version ? parseVersion(version) : reuseCurrentVersion ? from : nextPatch(from);
   const tag = `v${to}`;
   if (!reuseCurrentVersion && to === from) throw new Error(`新版本与当前版本相同: ${to}（可传入参数指定其他版本号）`);
-  if (await git(repo, ['tag', '-l', tag])) throw new Error(`tag ${tag} 已存在`);
+  const tagExists = Boolean(await git(repo, ['tag', '-l', tag]));
+  const reuseExistingTag = tagExists && reuseCurrentVersion &&
+    await git(repo, ['rev-parse', `${tag}^{}`]) === await git(repo, ['rev-parse', 'HEAD']);
+  if (tagExists && !reuseExistingTag) throw new Error(`tag ${tag} 已存在`);
   const branch = await git(repo, ['branch', '--show-current']);
   if (!branch) throw new Error('detached HEAD 状态，请先切换到分支再发版');
   const status = await git(repo, ['status', '--porcelain']);
   const dirty = status ? status.split('\n') : [];
 
   console.log(`发版计划: ${from} -> ${to} (${tag})，分支 ${branch}${local ? '（仅本地提交与 tag，不推送）' : ` -> ${remote}`}`);
-  console.log(reuseCurrentVersion ? '最新提交已更新版本号，复用当前提交，不再递增或创建版本提交' : `提交信息: ${releaseMessage(to)}`);
+  if (reuseExistingTag) console.log('本地 tag 已指向当前版本提交，复用该 tag，不再递增或创建版本提交');
+  else console.log(reuseCurrentVersion ? '最新提交已更新版本号，复用当前提交，不再递增或创建版本提交' : `提交信息: ${releaseMessage(to)}`);
   if (dirty.length > 0) {
     console.log(`警告: 本地有 ${dirty.length} 处未提交的更改:`);
     for (const line of dirty) console.log(`  ${line}`);
@@ -105,9 +109,9 @@ export async function publish({ repo, version, confirm, remote = 'origin', local
   const changed = reuseCurrentVersion ? [] : await rewriteVersion(repo, from, to);
   const message = releaseMessage(to);
   if (!reuseCurrentVersion) await git(repo, ['commit', '-m', message, '--', ...changed]);
-  await git(repo, ['tag', '-a', tag, '-m', message]);
+  if (!reuseExistingTag) await git(repo, ['tag', '-a', tag, '-m', message]);
   if (local) {
-    console.log(`完成: ${tag} 已在本地创建，未推送`);
+    console.log(`完成: 本地 tag ${tag} ${reuseExistingTag ? '已存在' : '已创建'}，未推送`);
   } else {
     await git(repo, ['push', remote, branch]);
     await git(repo, ['push', remote, tag]);

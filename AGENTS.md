@@ -10,9 +10,9 @@
 2. 执行 `node scripts/publish.mjs [--local] [vX.Y.Z]`：
    - 不带版本参数时，若最新提交已更新版本号，则复用当前版本与提交打 tag，否则自动取当前版本的下一个 patch 号；显式版本参数始终按指定版本执行；
    - `--local` 仅在本地完成版本提交与 tag，不 push 分支或 tag，因此不会触发 CI Release；
-   - 校验 5 个版本文件一致、新 tag 不存在、当前处于分支上（非 detached HEAD）；
+   - 校验 5 个版本文件一致、当前处于分支上（非 detached HEAD）；已有 tag 仅在指向当前版本提交时复用，否则中止；
    - 需要改版本时，将 5 个版本文件与 `viewer/test/*.test.mjs` 中的版本样例同步改写（`publish.test.mjs` 的固定样例除外），提交 `chore(kanban): 版本号更新至 X.Y.Z 并同步测试版本样例`；复用最新版本提交时不再创建提交；
-   - 打 tag `vX.Y.Z`，默认 push 分支与 tag，`--local` 时跳过 push。工作区有未提交更改时脚本会列出并需显式确认才继续，且只会提交版本相关文件，其余更改保持未提交。
+   - 打 tag `vX.Y.Z`，默认 push 分支与 tag，`--local` 时跳过 push。本地 tag 已指向当前版本提交时复用并继续，指向其他提交时中止。工作区有未提交更改时脚本会列出并需显式确认才继续，且只会提交版本相关文件，其余更改保持未提交。
 3. push tag 后 CI（`.github/workflows/release.yml`）自动完成剩余工作，Release 无需手工创建：
    - `node scripts/release.mjs stage $TAG <临时目录>` 按宿主白名单暂存 kimi / codex / claude 三个包；
    - 分别打包为 `kanban-plugin.zip`（Kimi）、`kanban-codex-plugin.zip`、`kanban-claude-plugin.zip`；

@@ -124,6 +124,20 @@ test('--local 只在本地提交并打 tag，不推送分支或 tag', async (t) 
   assert.equal((await exec('git', ['-C', remote, 'branch', '--list'])).stdout.trim(), '');
 });
 
+test('--local 后再次普通发版复用本地 tag 并推送，不改版本或提交', async (t) => {
+  const { repo, remote } = await fixtureRepo(t);
+  await publish({ repo, local: true, confirm: async () => true });
+  const versionCommit = await git(repo, ['rev-parse', 'HEAD']);
+  const result = await publish({ repo, confirm: async () => true });
+  assert.deepEqual({ from: result.from, to: result.to, changed: result.changed },
+    { from: '0.2.18', to: '0.2.18', changed: [] });
+  assert.equal(await git(repo, ['rev-parse', 'HEAD']), versionCommit);
+  assert.equal(await git(repo, ['rev-parse', 'v0.2.18^{}']), versionCommit);
+  assert.ok((await exec('git', ['-C', remote, 'tag'])).stdout.includes('v0.2.18'));
+  const branch = await git(repo, ['branch', '--show-current']);
+  assert.ok((await exec('git', ['-C', remote, 'branch', '--list', branch])).stdout.includes(branch));
+});
+
 test('最新提交已更新版本号时复用当前版本与提交，不再自动递增', async (t) => {
   const { repo, remote } = await fixtureRepo(t);
   const versionCommit = await commitVersion(repo, '0.2.18');
@@ -151,6 +165,14 @@ test('tag 已存在时中止', async (t) => {
   await git(repo, ['tag', '-a', 'v0.2.18', '-m', 'occupied']);
   await assert.rejects(publish({ repo, version: undefined, confirm: async () => true }), /tag v0\.2\.18 已存在/);
   assert.equal(await currentVersion(repo), '0.2.17');
+});
+
+test('同名 tag 指向其他提交时仍中止', async (t) => {
+  const { repo } = await fixtureRepo(t);
+  const versionCommit = await commitVersion(repo, '0.2.18');
+  await git(repo, ['tag', '-a', 'v0.2.18', '-m', 'occupied', 'HEAD^']);
+  await assert.rejects(publish({ repo, confirm: async () => true }), /tag v0\.2\.18 已存在/);
+  assert.equal(await git(repo, ['rev-parse', 'HEAD']), versionCommit);
 });
 
 test('有未提交更改且拒绝确认时中止，不留发版痕迹', async (t) => {

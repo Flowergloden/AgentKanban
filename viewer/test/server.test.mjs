@@ -6,7 +6,7 @@ test('health reports service metadata with no Kimi manifest present', async (t) 
   await withServer(t, ({ healthy }) => {
     assert.equal(healthy.ok, true);
     assert.equal(healthy.name, 'kanban-viewer');
-    assert.equal(healthy.version, '3.0.0');
+    assert.equal(healthy.version, '3.0.1');
     assert.equal(healthy.protocolVersion, 1);
   }, { isolatedCopy: true });
 });

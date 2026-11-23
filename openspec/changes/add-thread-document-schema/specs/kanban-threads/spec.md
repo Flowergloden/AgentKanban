@@ -4,7 +4,7 @@
 
 ### Requirement: 项目级线程 Schema
 
-系统 SHALL 在项目 `kanban/thread.schema.json` 中以有序字段列表和有序视图清单配置线程结构与页面入口。每个字段 SHALL 具有稳定 key、显示 label、类型和说明；核心字段 `status`、`goal`、`completed`、`decisions`、`changes`、`dependencies` MUST 各出现一次且保持规定类型，自定义字段 SHALL 使用受支持类型和不重复的 key。`views` SHALL 配置入口 key、label、`table`/`board`/`graph` 类型及必要的字段绑定，且恰好包含一个 table；board 和 graph MUST 分别绑定存在的 select 和 reference 字段。schema 缺失时 SHALL 使用承载旧实现的内置默认 schema；既有 schema 省略 `views` 时 SHALL 只在有效配置中补入默认三视图而不回写文件。schema 存在但字段或视图配置非法时 MUST 报告明确错误，MUST NOT 静默回退为默认 schema。
+系统 SHALL 在项目 `kanban/thread.schema.json` 中以有序字段列表和有序视图清单配置线程结构与页面入口。每个字段 SHALL 具有稳定 key、显示 label、类型和说明；核心字段 `status`、`goal`、`completed`、`decisions`、`changes`、`dependencies` MUST 各出现一次且保持规定类型，自定义字段 SHALL 使用受支持类型和不重复的 key。`views` SHALL 配置入口 key、label 及必要的字段绑定，MUST NOT 独立配置 `kind`；不携带 `fieldKey` 的唯一入口为 table，其他入口 MUST 根据目标字段类型分别呈现 select 看板或 reference 引用图。schema 缺失时 SHALL 使用承载旧实现的内置默认 schema；既有 schema 省略 `views` 时 SHALL 只在有效配置中补入默认三视图而不回写文件。schema 存在但字段或视图配置非法时 MUST 报告明确错误，MUST NOT 静默回退为默认 schema。
 
 #### Scenario: 使用默认 schema
 
@@ -19,7 +19,7 @@
 #### Scenario: 配置有序视图清单
 
 - **WHEN** 项目在 `views` 中配置表格、看板和引用图的 key、label、顺序及字段绑定
-- **THEN** 有效 schema 按配置保留这些入口，视图 key 不重复，table 不包含 fieldKey，非 table 的类型与绑定字段类型相符
+- **THEN** 有效 schema 按配置保留这些入口且不包含独立 kind，视图 key 不重复，table 不包含 fieldKey，非 table 的运行时类型由绑定字段类型推导
 
 #### Scenario: 既有 schema 省略视图清单
 
@@ -38,7 +38,7 @@
 
 #### Scenario: 视图配置非法
 
-- **WHEN** `views` 为空、缺少或重复 table、视图 key 重复、非 table 的 `kind + fieldKey` 组合重复，或看板/引用图绑定了缺失或类型不匹配的字段
+- **WHEN** `views` 为空、缺少或重复 table、视图 key 重复、配置了独立 kind、非 table 的 `fieldKey` 重复，或视图绑定了缺失字段或不支持的 markdown 字段
 - **THEN** 系统报告带视图位置的 schema 错误并拒绝相关写操作，不以默认视图替代非法配置
 
 ### Requirement: 线程字段类型语义

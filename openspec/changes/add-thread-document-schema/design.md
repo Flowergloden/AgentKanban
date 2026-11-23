@@ -50,9 +50,9 @@
     }
   ],
   "views": [
-    { "key": "all", "label": "全部字段", "kind": "table" },
-    { "key": "status-board", "label": "状态看板", "kind": "board", "fieldKey": "status" },
-    { "key": "dependency-graph", "label": "依赖关系", "kind": "graph", "fieldKey": "dependencies" }
+    { "key": "all", "label": "全部字段" },
+    { "key": "status-board", "label": "状态看板", "fieldKey": "status" },
+    { "key": "dependency-graph", "label": "依赖关系", "fieldKey": "dependencies" }
   ]
 }
 ```
@@ -65,7 +65,7 @@
 
 核心字段不可缺失或改类型；label、description 和字段顺序可配置。自定义字段可使用三种类型，select 必须具有非空且不重复的 options，reference 不需要 target 配置。key 使用受限的小写英文 kebab-case，key 与文档映射 label 均须唯一。`title` 保持系统元数据，不作为可配置字段；`status` 是唯一存放在 H2 小节之外的 schema 字段。
 
-`views` 是非空有序数组，每项具有稳定 key、显示 label 和 `table`、`board`、`graph` 之一。视图 key 使用小写英文 kebab-case 且不得重复，label 必须是非空单行字符串。清单必须且只能包含一个不携带 `fieldKey` 的 table；board 和 graph 必须分别绑定存在的 select 和 reference 字段，非 table 视图的 `kind + fieldKey` 组合不得重复。字段存在于 `fields` 不会自动产生视图，入口名称、顺序与绑定只以 `views` 为准。
+`views` 是非空有序数组，每项具有稳定 key 和显示 label，不得独立配置 kind。视图 key 使用小写英文 kebab-case 且不得重复，label 必须是非空单行字符串。清单必须且只能包含一个不携带 `fieldKey` 的 table；其他视图绑定存在的 select 或 reference 字段，运行时分别派生 board 和 graph，非 table 视图的 `fieldKey` 不得重复，markdown 字段不可作为视图目标。字段存在于 `fields` 不会自动产生视图，入口名称、顺序与绑定只以 `views` 为准。
 
 既有 schema 省略 `views` 时，读取结果补入默认三视图且不写回项目文件，以兼容本变更前已生成的配置；`views` 一旦存在就必须通过上述校验，不能用默认视图掩盖非法配置。新初始化和补齐默认 schema 时显式物化 `views`。schema 文件缺失与文件非法必须区分：前者使用默认配置，后者返回带路径和字段定位的错误并阻止相关写操作。初版每次列表/详情读取重新加载 schema，避免缓存失效复杂度；响应携带包含视图配置的 schema 内容指纹供前端轮询比较。
 
@@ -141,16 +141,16 @@ threads[].fields[key] = typed value
 { kind: 'graph', fieldKey }
 ```
 
-但状态只能由 `schema.views` 中已配置的入口产生，不能再遍历字段类型自动创建入口。有效 schema 与线程字段值共同驱动渲染：
+但状态只能由 `schema.views` 中已配置的入口产生，不能再遍历字段类型自动创建入口；运行时 kind 由目标字段类型推导，不读取配置中的 kind。有效 schema 与线程字段值共同驱动渲染：
 
-- 表格入口来自唯一的 table 配置，展示固定系统列加 schema 字段列；每行携带文件指纹。
-- 只有配置为 board 的 select 字段才显示看板入口；入口 label 与顺序来自视图配置，看板列来自绑定字段的 options，拖拽与单元格编辑共用字段写入口。
-- 只有配置为 graph 的 reference 字段才显示引用图入口；引用图接收绑定的 `fieldKey`，不再读取固定 `deps` 或写死“依赖”小节。
+- 表格入口来自唯一不携带 `fieldKey` 的配置，展示固定系统列加 schema 字段列；每行携带文件指纹。
+- 只有已在 `views` 中登记的 select 字段才显示看板入口；入口 label 与顺序来自视图配置，看板列来自绑定字段的 options，拖拽与单元格编辑共用字段写入口。
+- 只有已在 `views` 中登记的 reference 字段才显示引用图入口；引用图接收绑定的 `fieldKey`，不再读取固定 `deps` 或写死“依赖”小节。
 - markdown 单元格默认显示摘要，点击后在当前行展开 Live Preview；继续复用 `createDocumentSync`、外部版本协调与三方合并。
 - 详情页按 schema 渲染全部字段；核心 goal 随手编辑，其余字段显式解锁；未映射小节只读展示。
-- 视图选择只保留在页面状态中，不写入 schema、URL 或 localStorage。schema 轮询发现当前入口被移除、kind/fieldKey 改变或绑定字段失效时，回退到配置的 table 并提示，不发送基于旧配置的写请求；仅 label 或其他入口顺序变化不重置当前有效视图。
+- 视图选择只保留在页面状态中，不写入 schema、URL 或 localStorage。schema 轮询发现当前入口被移除、fieldKey 改变、绑定字段失效或字段类型变化导致推导 kind 改变时，回退到配置的 table 并提示，不发送基于旧配置的写请求；仅 label 或其他入口顺序变化不重置当前有效视图。
 
-非 table 视图的 `kind + fieldKey` 唯一，因此上述状态可无歧义地匹配一个配置入口。依赖图的位置存储键继续使用字段 key，避免不同引用字段的图互相覆盖位置。节点仍使用核心 status 着色，核心 goal 仅用于卡片摘要，Changes 不参与图或线程链接。
+非 table 视图的 `fieldKey` 唯一，因此上述状态可无歧义地匹配一个配置入口。依赖图的位置存储键继续使用字段 key，避免不同引用字段的图互相覆盖位置。节点仍使用核心 status 着色，核心 goal 仅用于卡片摘要，Changes 不参与图或线程链接。
 
 ### 6. Agent 工作流按 key 定位，提示保持纯文件可读
 

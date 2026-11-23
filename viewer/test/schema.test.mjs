@@ -26,12 +26,12 @@ test('合法自定义字段按顺序保留并规范化引用默认值', async ()
   assert.deepEqual(schema.fields.at(-1).default, ['0002']);
 });
 
-test('默认 schema 显式包含默认三视图', () => {
+test('默认 schema 显式包含默认三视图，kind 不进入配置', () => {
   const schema = defaultSchema();
   assert.deepEqual(schema.views, [
-    { key: 'all', label: '全部字段', kind: 'table' },
-    { key: 'status-board', label: '状态看板', kind: 'board', fieldKey: 'status' },
-    { key: 'dependency-graph', label: '依赖关系', kind: 'graph', fieldKey: 'dependencies' },
+    { key: 'all', label: '全部字段' },
+    { key: 'status-board', label: '状态看板', fieldKey: 'status' },
+    { key: 'dependency-graph', label: '依赖关系', fieldKey: 'dependencies' },
   ]);
 });
 
@@ -50,7 +50,7 @@ test('既有 schema 省略 views 时补默认三视图，有效配置与显式�
   assert.notEqual(schemaFingerprint(validateSchema(reordered)), schemaFingerprint(effective));
   const custom = defaultSchema();
   custom.fields.push({ key: 'owner', label: '负责人', type: 'select', description: '负责人。', options: ['甲', '乙'], default: '甲' });
-  custom.views.push({ key: 'owner-board', label: '负责看板', kind: 'board', fieldKey: 'owner' });
+  custom.views.push({ key: 'owner-board', label: '负责看板', fieldKey: 'owner' });
   assert.notEqual(schemaFingerprint(validateSchema(custom)), schemaFingerprint(effective));
 });
 
@@ -74,33 +74,31 @@ test('合法自定义视图按配置保留 label、顺序与字段绑定', () =>
     { key: 'related', label: '相关线程', type: 'reference', description: '相关线程。' },
   );
   schema.views = [
-    { key: 'main', label: '总览', kind: 'table' },
-    { key: 'priority-board', label: '优先级看板', kind: 'board', fieldKey: 'priority' },
-    { key: 'status-board', label: '状态看板', kind: 'board', fieldKey: 'status' },
-    { key: 'related-graph', label: '相关关系', kind: 'graph', fieldKey: 'related' },
-    { key: 'dependency-graph', label: '依赖关系', kind: 'graph', fieldKey: 'dependencies' },
+    { key: 'main', label: '总览' },
+    { key: 'priority-board', label: '优先级看板', fieldKey: 'priority' },
+    { key: 'status-board', label: '状态看板', fieldKey: 'status' },
+    { key: 'related-graph', label: '相关关系', fieldKey: 'related' },
+    { key: 'dependency-graph', label: '依赖关系', fieldKey: 'dependencies' },
   ];
   const validated = validateSchema(schema);
   assert.deepEqual(validated.views.map((view) => view.key), ['main', 'priority-board', 'status-board', 'related-graph', 'dependency-graph']);
-  assert.deepEqual(validated.views[1], { key: 'priority-board', label: '优先级看板', kind: 'board', fieldKey: 'priority' });
+  assert.deepEqual(validated.views[1], { key: 'priority-board', label: '优先级看板', fieldKey: 'priority' });
 });
 
 for (const [name, mutate, pattern] of [
   ['views 为空', (schema) => { schema.views = []; }, /\$\.views 必须是非空数组/],
   ['views 非数组', (schema) => { schema.views = {}; }, /\$\.views 必须是非空数组/],
-  ['缺少 table', (schema) => { schema.views = schema.views.filter((view) => view.kind !== 'table'); }, /恰好包含一个.*table/],
-  ['重复 table', (schema) => { schema.views.push({ key: 'extra', label: '额外', kind: 'table' }); }, /恰好包含一个.*table/],
-  ['table 携带 fieldKey', (schema) => { schema.views[0].fieldKey = 'status'; }, /table 视图不得携带 fieldKey/],
+  ['缺少 table', (schema) => { schema.views = schema.views.filter((view) => view.fieldKey !== undefined); }, /恰好包含一个.*table/],
+  ['重复 table', (schema) => { schema.views.push({ key: 'extra', label: '额外' }); }, /恰好包含一个.*table/],
+  ['视图配置 kind', (schema) => { schema.views[1].kind = 'board'; }, /kind 不可独立配置/],
   ['视图 key 重复', (schema) => { schema.views[2].key = 'all'; }, /重复：all/],
   ['视图 key 非 kebab-case', (schema) => { schema.views[1].key = 'StatusBoard'; }, /kebab-case/],
   ['视图 label 为空', (schema) => { schema.views[1].label = '  '; }, /非空单行字符串/],
   ['视图 label 多行', (schema) => { schema.views[1].label = 'a\nb'; }, /非空单行字符串/],
-  ['视图 kind 非法', (schema) => { schema.views[1].kind = 'calendar'; }, /不支持：calendar/],
-  ['board 缺 fieldKey', (schema) => { delete schema.views[1].fieldKey; }, /必须绑定 fieldKey/],
-  ['board 绑定缺失字段', (schema) => { schema.views[1].fieldKey = 'missing'; }, /绑定的字段不存在：missing/],
-  ['board 绑定 markdown 字段', (schema) => { schema.views[1].fieldKey = 'goal'; }, /看板必须绑定 select 字段：goal（当前 markdown）/],
-  ['graph 绑定 select 字段', (schema) => { schema.views[2].fieldKey = 'status'; }, /引用图必须绑定 reference 字段：status（当前 select）/],
-  ['非 table 组合重复', (schema) => { schema.views.push({ key: 'again', label: '再看板', kind: 'board', fieldKey: 'status' }); }, /组合重复：board\+status/],
+  ['视图 fieldKey 为空', (schema) => { schema.views[1].fieldKey = ''; }, /必须是非空字符串/],
+  ['视图绑定缺失字段', (schema) => { schema.views[1].fieldKey = 'missing'; }, /绑定的字段不存在：missing/],
+  ['视图绑定 markdown 字段', (schema) => { schema.views[1].fieldKey = 'goal'; }, /必须绑定 select 或 reference 字段：goal（当前 markdown）/],
+  ['非 table fieldKey 重复', (schema) => { schema.views.push({ key: 'again', label: '再看板', fieldKey: 'status' }); }, /fieldKey 重复：status/],
 ]) {
   test(`非法 schema：${name}`, () => {
     const schema = defaultSchema();

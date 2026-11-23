@@ -1,34 +1,44 @@
 export const TABLE_VIEW = Object.freeze({ kind: 'table' });
 
 // 与服务端默认 schema 一致的兜底视图：schema 尚未加载或来自旧服务时保持页面可用
+const FALLBACK_FIELDS = Object.freeze([
+  Object.freeze({ key: 'status', type: 'select' }),
+  Object.freeze({ key: 'dependencies', type: 'reference' }),
+]);
 const FALLBACK_VIEWS = Object.freeze([
-  Object.freeze({ key: 'all', label: '全部字段', kind: 'table' }),
-  Object.freeze({ key: 'status-board', label: '状态看板', kind: 'board', fieldKey: 'status' }),
-  Object.freeze({ key: 'dependency-graph', label: '依赖关系', kind: 'graph', fieldKey: 'dependencies' }),
+  Object.freeze({ key: 'all', label: '全部字段' }),
+  Object.freeze({ key: 'status-board', label: '状态看板', fieldKey: 'status' }),
+  Object.freeze({ key: 'dependency-graph', label: '依赖关系', fieldKey: 'dependencies' }),
 ]);
 
-// 视图入口只来自 schema.views 配置（key、label、顺序、字段绑定），不为字段类型自动派生
+// 视图入口只来自 schema.views 配置（key、label、顺序、字段绑定），kind 由目标字段类型推导
 function configuredViews(schema) {
   return Array.isArray(schema?.views) && schema.views.length > 0 ? schema.views : FALLBACK_VIEWS;
+}
+
+function viewKind(view, schema) {
+  if (view.fieldKey === undefined) return 'table';
+  const fields = schema?.fields ?? FALLBACK_FIELDS;
+  const type = fields.find((field) => field.key === view.fieldKey)?.type;
+  if (type === 'select') return 'board';
+  if (type === 'reference') return 'graph';
+  return undefined;
 }
 
 export function viewsForSchema(schema) {
   return configuredViews(schema).map((view) => ({
     key: view.key,
     label: view.label,
-    kind: view.kind,
+    kind: viewKind(view, schema),
     ...(view.fieldKey !== undefined ? { fieldKey: view.fieldKey } : {}),
   }));
 }
 
-// 有效性同时核对配置项与字段绑定：入口存在于 views 配置，且 board/graph 绑定字段仍存在且类型匹配
+// 有效性同时核对配置项与字段绑定：入口存在，且推导 kind 与当前视图状态一致
 export function isViewValid(view, schema) {
   if (!view || !schema) return false;
-  const entry = configuredViews(schema).find((item) => item.kind === view.kind && (item.kind === 'table' || item.fieldKey === view.fieldKey));
-  if (!entry) return false;
-  if (view.kind === 'table') return true;
-  const field = schema.fields?.find((item) => item.key === view.fieldKey);
-  return Boolean(field && ((view.kind === 'board' && field.type === 'select') || (view.kind === 'graph' && field.type === 'reference')));
+  return configuredViews(schema).some((item) => viewKind(item, schema) === view.kind
+    && (view.kind === 'table' ? item.fieldKey === undefined : item.fieldKey === view.fieldKey));
 }
 
 export function listProjection(data) {

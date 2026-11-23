@@ -34,13 +34,13 @@ label、description 和字段顺序可改，核心 key 与类型不可改。`tit
 
 ### 视图清单（views）
 
-`views` 是有序数组，配置看板页面的视图入口：每项包含稳定 `key`、显示 `label` 和 `kind`（`table`、`board`、`graph` 之一）。`table` 是全部字段表格，不得携带 `fieldKey`；清单必须恰好包含一个 `table`。`board` 必须绑定一个存在的 select 字段（`fieldKey`），按该字段 options 分列；`graph` 必须绑定一个存在的 reference 字段，按该字段的序号列表建图。视图 key 使用小写英文 kebab-case 且不得重复，label 为非空单行；非 table 视图的 `kind + fieldKey` 组合不得重复。
+`views` 是有序数组，配置看板页面的视图入口：每项包含稳定 `key`、显示 `label`，不得独立配置 `kind`。不携带 `fieldKey` 的唯一一项是全部字段表格（table）；其他项必须通过 `fieldKey` 绑定一个存在的字段，目标为 select 时呈现看板（board），目标为 reference 时呈现引用图（graph），markdown 字段不能作为视图目标。视图 key 使用小写英文 kebab-case 且不得重复，label 为非空单行；非表格视图的 `fieldKey` 不得重复。
 
 ```json
 "views": [
-  { "key": "all", "label": "全部字段", "kind": "table" },
-  { "key": "status-board", "label": "状态看板", "kind": "board", "fieldKey": "status" },
-  { "key": "dependency-graph", "label": "依赖关系", "kind": "graph", "fieldKey": "dependencies" }
+  { "key": "all", "label": "全部字段" },
+  { "key": "status-board", "label": "状态看板", "fieldKey": "status" },
+  { "key": "dependency-graph", "label": "依赖关系", "fieldKey": "dependencies" }
 ]
 ```
 
@@ -51,8 +51,8 @@ label、description 和字段顺序可改，核心 key 与类型不可改。`tit
 ### 三类字段
 
 - **markdown**：任意 Markdown 原文。字段说明放在 HTML 注释中，不算正式内容。`changes` 只是名称列表，不产生线程引用。
-- **select**：只能取 `options` 中一个值；非必填字段可空。页面提供选项控件；若字段被 `views` 配置为 board，则提供按选项分组的看板。
-- **reference**：只保存四位线程序号，一行一条 `- 0002`，有序去重；可指向不存在序号并显示悬空标记。页面提供增删与跳转；若字段被 `views` 配置为 graph，则提供引用图。核心 `dependencies` 不约束状态，自定义 reference 也不会自动获得依赖工作流含义。
+- **select**：只能取 `options` 中一个值；非必填字段可空。页面提供选项控件；若字段已在 `views` 中登记，则提供按选项分组的看板。
+- **reference**：只保存四位线程序号，一行一条 `- 0002`，有序去重；可指向不存在序号并显示悬空标记。页面提供增删与跳转；若字段已在 `views` 中登记，则提供引用图。核心 `dependencies` 不约束状态，自定义 reference 也不会自动获得依赖工作流含义。
 
 ## 创建与生成格式
 

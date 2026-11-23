@@ -226,7 +226,7 @@
 
 ### Requirement: 看板页面的线程视图
 
-页面 SHALL 按有效 `schema.views` 的配置顺序展示视图入口，并使用配置 label；MUST NOT 遍历字段类型自动派生额外入口。唯一 table 配置对应全部线程基础表格，表格按 schema 顺序展示全部字段及标识、标题、最近更新等系统列。board 入口 SHALL 仅读取其绑定的 select 字段并按 options 分组，graph 入口 SHALL 仅读取其绑定的 reference 字段建图；默认 schema 显式配置 status 看板与 dependencies 引用图。活跃线程在各视图中 SHALL 有明显标识，看板拖拽 SHALL 更新其分组字段。当前视图选择 SHALL 仅保留在页面状态中，MUST NOT 写入 schema、URL 或 localStorage；本变更不提供通用筛选或自定义视图插件，固定“未完成”视图 SHALL 移除。项目切换与既有 URL 项目定位行为保持不变。
+页面 SHALL 按有效 `schema.views` 的配置顺序展示视图入口，并使用配置 label；MUST NOT 遍历字段类型自动派生额外入口。唯一不携带 `fieldKey` 的 table 配置对应全部线程基础表格，表格按 schema 顺序展示全部字段及标识、标题、最近更新等系统列。其他入口 SHALL 根据目标字段 `type` 推导运行时 kind：select 对应 board，reference 对应 graph；配置本身 MUST NOT 携带独立 kind。board 入口 SHALL 仅读取其绑定的 select 字段并按 options 分组，graph 入口 SHALL 仅读取其绑定的 reference 字段建图；默认 schema 显式配置 status 看板与 dependencies 引用图。活跃线程在各视图中 SHALL 有明显标识，看板拖拽 SHALL 更新其分组字段。当前视图选择 SHALL 仅保留在页面状态中，MUST NOT 写入 schema、URL 或 localStorage；本变更不提供通用筛选或自定义视图插件，固定“未完成”视图 SHALL 移除。项目切换与既有 URL 项目定位行为保持不变。
 
 #### Scenario: 基础表格展示全部字段
 
@@ -265,7 +265,7 @@
 
 #### Scenario: 当前视图配置失效
 
-- **WHEN** 外部修改 schema 后，当前入口被移除、kind/fieldKey 改变或绑定字段不再存在或类型不再匹配
+- **WHEN** 外部修改 schema 后，当前入口被移除、fieldKey 改变、绑定字段不再存在或类型变化导致推导 kind 改变
 - **THEN** 页面回退到配置的表格并显示明确提示，不继续向旧字段写入
 
 #### Scenario: 当前视图选择不持久化

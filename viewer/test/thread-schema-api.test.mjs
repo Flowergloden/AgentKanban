@@ -129,7 +129,7 @@ test('列表与详情返回有效 views；非法视图配置明确定位报错�
     assert.equal(list.schemaFingerprint, schemaFingerprint(list.schema));
 
     const schema = defaultSchema();
-    schema.views = [{ key: 'only-board', label: '只看板', kind: 'board', fieldKey: 'status' }];
+    schema.views = [{ key: 'only-board', label: '只看板', fieldKey: 'status' }];
     await writeFile(path.join(root, 'kanban', 'thread.schema.json'), JSON.stringify(schema));
     const response = await fetch(`${url}/api/threads?root=${encodeURIComponent(root)}`);
     assert.equal(response.status, 400);

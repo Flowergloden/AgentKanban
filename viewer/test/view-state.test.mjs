@@ -20,29 +20,34 @@ test('自定义 select/reference 字段不自动派生视图入口', () => {
   assert.deepEqual(viewsForSchema(schema).map((view) => view.key), ['all', 'status-board', 'dependency-graph']);
 });
 
-test('入口 label 与顺序由配置决定，重命名不破坏当前视图有效性', () => {
+test('入口 label 与顺序由配置决定，kind 由目标字段类型推导', () => {
   const schema = defaultSchema();
   schema.views = [
-    { key: 'status-board', label: '生命周期看板', kind: 'board', fieldKey: 'status' },
-    { key: 'all', label: '总览表', kind: 'table' },
-    { key: 'dependency-graph', label: '依赖关系', kind: 'graph', fieldKey: 'dependencies' },
+    { key: 'status-board', label: '生命周期看板', fieldKey: 'status' },
+    { key: 'all', label: '总览表' },
+    { key: 'dependency-graph', label: '依赖关系', fieldKey: 'dependencies' },
   ];
   const views = viewsForSchema(schema);
   assert.deepEqual(views.map((view) => view.key), ['status-board', 'all', 'dependency-graph']);
   assert.deepEqual(views.map((view) => view.label), ['生命周期看板', '总览表', '依赖关系']);
+  assert.deepEqual(views.map((view) => view.kind), ['board', 'table', 'graph']);
   assert.equal(isViewValid({ kind: 'board', fieldKey: 'status' }, schema), true);
   assert.equal(isViewValid(TABLE_VIEW, schema), true);
 });
 
 test('当前视图被移除、改绑或绑定字段类型变化时判定失效，回退表格', () => {
   const schema = defaultSchema();
-  schema.views = [{ key: 'all', label: '全部字段', kind: 'table' }];
+  schema.views = [{ key: 'all', label: '全部字段' }];
   assert.equal(isViewValid({ kind: 'board', fieldKey: 'status' }, schema), false);
   assert.equal(isViewValid({ kind: 'graph', fieldKey: 'dependencies' }, schema), false);
 
   const rebound = defaultSchema();
   rebound.views[1].fieldKey = 'goal'; // 服务端校验会拒绝，前端防御性核对绑定类型
   assert.equal(isViewValid({ kind: 'board', fieldKey: 'goal' }, rebound), false);
+  const changed = defaultSchema();
+  changed.fields.find((field) => field.key === 'status').type = 'reference';
+  assert.equal(isViewValid({ kind: 'board', fieldKey: 'status' }, changed), false);
+  assert.equal(isViewValid({ kind: 'graph', fieldKey: 'status' }, changed), true);
   const removed = defaultSchema();
   removed.fields = removed.fields.filter((field) => field.key !== 'dependencies');
   assert.equal(isViewValid({ kind: 'graph', fieldKey: 'dependencies' }, removed), false);
@@ -50,7 +55,7 @@ test('当前视图被移除、改绑或绑定字段类型变化时判定失效�
 
 test('当前视图失效时按页面规则回退到配置的表格视图', () => {
   const schema = defaultSchema();
-  schema.views = [{ key: 'all', label: '全部字段', kind: 'table' }];
+  schema.views = [{ key: 'all', label: '全部字段' }];
   const current = { kind: 'board', fieldKey: 'status' };
   const next = isViewValid(current, schema) ? current : TABLE_VIEW;
   assert.deepEqual(next, TABLE_VIEW);

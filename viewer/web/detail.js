@@ -2,9 +2,9 @@ import { html, useEffect, useRef, useState } from './vendor/preact-standalone.mo
 import { api } from './api.js';
 import { MarkdownPreview } from './markdown-preview.js';
 import { createExternalSync } from './external-sync.js';
-import { MarkdownFieldEditor, ReferenceFieldControl, SelectFieldControl } from './field-controls.js';
+import { FileFieldControl, MarkdownFieldEditor, ReferenceFieldControl, SelectFieldControl } from './field-controls.js';
 
-export function ThreadDetail({ root, threadId, isActive, threads, onBack, onOpen, onChanged, onRequestDelete }) {
+export function ThreadDetail({ root, threadId, isActive, threads, onBack, onOpen, onChanged, onRequestDelete, onPreview }) {
   const [thread, setThread] = useState(null);
   const [error, setError] = useState('');
   const [pollError, setPollError] = useState('');
@@ -95,7 +95,7 @@ export function ThreadDetail({ root, threadId, isActive, threads, onBack, onOpen
     ${(error || pollError) && html`<div class="banner-409">${error || pollError}</div>`}
     ${thread.errors?.length > 0 && html`<div class="banner-409">卷宗映射异常：${thread.errors.join('；')}。请检查 key 标记或重复小节。</div>`}
     ${schema.fields.filter((field) => field.key !== 'status').map((field) => {
-      const entry = thread.fields[field.key] ?? { value: field.type === 'reference' ? [] : '', content: '', missing: true };
+      const entry = thread.fields[field.key] ?? { value: field.type === 'reference' || field.type === 'file' ? [] : '', content: '', missing: true };
       const editing = editingKey === field.key;
       const free = field.key === 'goal';
       return html`<section key=${field.key} class="detail-field" data-field-key=${field.key}>
@@ -109,14 +109,20 @@ export function ThreadDetail({ root, threadId, isActive, threads, onBack, onOpen
         ${editing ? (
           field.type === 'markdown' ? html`<${MarkdownFieldEditor} root=${root} threadId=${threadId} fieldKey=${field.key} onChanged=${changed} onDone=${() => setEditingKey(null)} />`
             : field.type === 'select' ? html`<${SelectFieldControl} root=${root} threadId=${threadId} field=${field} value=${entry.value} fingerprint=${thread.fingerprint} onChanged=${changed} />`
-              : html`<${ReferenceFieldControl} root=${root} threadId=${threadId} field=${field} value=${entry.value} fingerprint=${thread.fingerprint} threads=${threads} onOpen=${onOpen} onChanged=${changed} />`
+              : field.type === 'reference' ? html`<${ReferenceFieldControl} root=${root} threadId=${threadId} field=${field} value=${entry.value} fingerprint=${thread.fingerprint} threads=${threads} onOpen=${onOpen} onChanged=${changed} />`
+                : field.type === 'file' ? html`<${FileFieldControl} root=${root} threadId=${threadId} field=${field} value=${entry.value} fingerprint=${thread.fingerprint} onChanged=${changed} onPreview=${onPreview} />`
+                  : html`<span class="badge-error">不支持的字段类型：${field.type}</span>`
         ) : html`<div class=${'section-body' + (free ? ' editable' : '')} onClick=${() => free && setEditingKey(field.key)}>
           ${field.type === 'markdown' ? html`<${MarkdownPreview} source=${entry.value} />`
             : field.type === 'select' ? html`${entry.value || '（空）'}`
-              : entry.value.length === 0 ? html`（空）` : entry.value.map((num) => {
+              : field.type === 'reference' ? (entry.value.length === 0 ? html`（空）` : entry.value.map((num) => {
                 const target = threads.find((item) => item.id.slice(0, 4) === num);
                 return html`<div key=${num}>${target ? html`<a href="#" onClick=${(event) => { event.preventDefault(); onOpen(target.id); }}>${num} ${target.title}</a>` : html`<span class="reference-dangling">${num}（悬空）</span>`}</div>`;
-              })}
+              }))
+                : field.type === 'file' ? (entry.value.length === 0 ? html`（空）` : entry.value.map((filePath) => html`<div class="file-detail-path" key=${filePath}>
+                  <button class="file-path" title=${filePath} onClick=${() => onPreview?.(filePath, field, threadId)}>${filePath}</button>
+                </div>`))
+                  : html`<span class="badge-error">不支持的字段类型：${field.type}</span>`}
         </div>`}
       </section>`;
     })}

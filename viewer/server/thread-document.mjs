@@ -16,7 +16,7 @@ const cleanLines = (lines) => {
 };
 const clean = (lines) => cleanLines(lines).join('\n');
 const markerPattern = /<!--\s*kanban:field=([a-z0-9-]+)\s*-->/g;
-const emptyValue = (field) => field.type === 'reference' ? [] : '';
+const emptyValue = (field) => field.type === 'reference' || field.type === 'file' ? [] : '';
 
 function sectionContent(section) {
   if (!section) return '';

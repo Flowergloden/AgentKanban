@@ -30,7 +30,7 @@ async function oldService({ dir, env, base }) {
   const old = path.join(dir, 'old-viewer');
   await mkdir(path.join(old, 'server'), { recursive: true });
   await mkdir(path.join(old, 'web'));
-  for (const file of ['server.mjs', 'metadata.mjs', 'registry.mjs', 'lock.mjs', 'lifecycle.mjs', 'threads.mjs', 'thread-document.mjs', 'schema.mjs', 'field-types.mjs', 'vcs.mjs'])
+  for (const file of ['server.mjs', 'metadata.mjs', 'registry.mjs', 'lock.mjs', 'lifecycle.mjs', 'threads.mjs', 'thread-document.mjs', 'schema.mjs', 'field-types.mjs', 'file-paths.mjs', 'file-picker.mjs', 'file-references.mjs', 'vcs.mjs'])
     await copyFile(path.join(viewer, 'server', file), path.join(old, 'server', file));
   await writeFile(path.join(old, 'service.json'), JSON.stringify({ version: '0.2.3', protocolVersion: 1 }));
   const child = spawn(process.execPath, [path.join(old, 'server', 'server.mjs')], { env: { ...env, AGENT_KANBAN_INITIAL_MODE: 'persistent' }, cwd: os.tmpdir(), stdio: 'ignore' });

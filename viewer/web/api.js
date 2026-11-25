@@ -33,6 +33,8 @@ export const api = {
   init: (root) => request('/api/init', jsonOptions('POST', { root })),
   listThreads: (root) => request(`/api/threads${q(root)}`),
   getThread: (root, id) => request(`/api/thread${q(root)}&id=${encodeURIComponent(id)}`),
+  selectFiles: (root, id, fieldKey) => request('/api/thread/file-selection', jsonOptions('POST', { root, id, fieldKey })),
+  getFile: (root, id, fieldKey, filePath) => request(`/api/thread/file${q(root)}&id=${encodeURIComponent(id)}&fieldKey=${encodeURIComponent(fieldKey)}&path=${encodeURIComponent(filePath)}`),
   updateField: (root, id, fieldKey, value, fingerprint) =>
     request('/api/thread/field', jsonOptions('PUT', { root, id, fieldKey, value, fingerprint })),
   updateFieldContent: (root, id, fieldKey, content, fingerprint) =>

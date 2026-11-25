@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { validateField } from './field-types.mjs';
 
 export const STATUS_OPTIONS = Object.freeze(['立项', '规划', '实现', '完成']);
 export const CORE_FIELDS = Object.freeze({
@@ -89,7 +90,7 @@ export function validateSchema(input) {
     if (typeof field.label !== 'string' || !field.label.trim() || /[\r\n]/.test(field.label)) fail(`${at}.label`, '必须是非空单行字符串');
     if (labels.has(field.label)) fail(`${at}.label`, `重复：${field.label}`);
     labels.add(field.label);
-    if (!['markdown', 'select', 'reference'].includes(field.type)) fail(`${at}.type`, `不支持：${field.type}`);
+    if (!['markdown', 'select', 'reference', 'file'].includes(field.type)) fail(`${at}.type`, `不支持：${field.type}`);
     if (typeof field.description !== 'string') fail(`${at}.description`, '必须是字符串');
     if (field.required !== undefined && typeof field.required !== 'boolean') fail(`${at}.required`, '必须是布尔值');
     const core = CORE_FIELDS[field.key];
@@ -115,6 +116,14 @@ export function validateSchema(input) {
         fail(`${at}.default`, '必须是四位线程序号数组');
       }
       if (normalized.default) normalized.default = [...new Set(normalized.default)];
+    }
+    if (field.type === 'file') {
+      if (normalized.default === undefined) normalized.default = [];
+      try {
+        normalized.default = validateField(normalized.default, normalized);
+      } catch (error) {
+        fail(`${at}.default`, error.message);
+      }
     }
     return normalized;
   });

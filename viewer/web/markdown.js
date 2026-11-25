@@ -10,6 +10,14 @@ const SANITIZE_CONFIG = {
   FORBID_ATTR: ['style'],
 };
 
+if (typeof DOMPurify?.addHook === 'function') {
+  DOMPurify.addHook('uponSanitizeElement', (node, data, config) => {
+    if (node.nodeName === 'IMG' && config.FORBID_TAGS?.includes('img')) {
+      node.replaceWith(node.ownerDocument.createTextNode(node.getAttribute('alt') || '（图片）'));
+    }
+  });
+}
+
 const TASK_PREFIX = /^(?:[*+-]|\d{1,9}[.)])[ \t]+\[[ xX]\]/;
 
 function mapDeletedContent(content, raw) {
@@ -109,12 +117,13 @@ export function markdownTaskOffsets(source) {
 }
 
 // 仅供测试与诊断使用：输出未清理的 marked HTML，禁止直接插入 DOM。
-export function parseMarkdown(source, { interactiveTasks = false } = {}) {
+export function parseMarkdown(source, { interactiveTasks = false, disableImages = false } = {}) {
   const text = String(source ?? '');
-  if (!interactiveTasks) return marked.parse(text);
+  if (!interactiveTasks && !disableImages) return marked.parse(text);
   let taskIndex = 0;
   const renderer = new marked.Renderer();
-  renderer.checkbox = ({ checked }) => `<input ${checked ? 'checked="" ' : ''}type="checkbox" data-task-index="${taskIndex++}"> `;
+  if (interactiveTasks) renderer.checkbox = ({ checked }) => `<input ${checked ? 'checked="" ' : ''}type="checkbox" data-task-index="${taskIndex++}"> `;
+  if (disableImages) renderer.image = ({ text: alt }) => String(alt || '（图片）').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return marked.parse(text, { renderer });
 }
 
@@ -122,9 +131,10 @@ export function sanitizerAvailable() {
   return typeof DOMPurify?.sanitize === 'function' && DOMPurify.isSupported !== false;
 }
 
-export function sanitizeHtml(dirty) {
+export function sanitizeHtml(dirty, { disableImages = false } = {}) {
   if (!sanitizerAvailable()) return undefined; // 不支持时不返回伪安全结果
-  return DOMPurify.sanitize(dirty, SANITIZE_CONFIG);
+  const config = disableImages ? { ...SANITIZE_CONFIG, FORBID_TAGS: [...SANITIZE_CONFIG.FORBID_TAGS, 'img'] } : SANITIZE_CONFIG;
+  return DOMPurify.sanitize(dirty, config);
 }
 
 // 渲染入口：成功返回清理后的 HTML；清理组件不可用或渲染异常时回退为原文转义。
@@ -136,7 +146,7 @@ export function renderMarkdown(source, options) {
     if (!sanitizerAvailable()) {
       return { ok: false, mode: 'escaped', error: '清理组件不可用', text };
     }
-    return { ok: true, mode: 'html', html: sanitizeHtml(parseMarkdown(text, options)) };
+    return { ok: true, mode: 'html', html: sanitizeHtml(parseMarkdown(text, options), { disableImages: options?.disableImages }) };
   } catch (error) {
     return { ok: false, mode: 'escaped', error: error?.message ?? String(error), text };
   }

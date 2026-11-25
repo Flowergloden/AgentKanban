@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 const repo = fileURLToPath(new URL('..', import.meta.url));
 const sourceDefault = path.join(repo, 'viewer');
 const server = [
-  'activity.mjs', 'control.mjs', 'field-types.mjs', 'lifecycle.mjs', 'lock.mjs', 'manager.mjs',
+  'activity.mjs', 'control.mjs', 'field-types.mjs', 'file-paths.mjs', 'file-picker.mjs', 'file-references.mjs', 'lifecycle.mjs', 'lock.mjs', 'manager.mjs',
   'metadata.mjs', 'open.mjs', 'registry.mjs', 'schema.mjs', 'server.mjs', 'thread-document.mjs', 'threads.mjs', 'vcs.mjs',
 ].map((name) => `server/${name}`);
 const web = [
-  'api.js', 'app.js', 'dep-graph.js', 'detail.js', 'document-sync.js', 'external-sync.js', 'field-controls.js', 'index.html',
+  'api.js', 'app.js', 'dep-graph.js', 'detail.js', 'document-sync.js', 'external-sync.js', 'field-controls.js', 'file-preview.js', 'index.html',
   'markdown.js', 'markdown-merge.js', 'markdown-preview.js', 'markdown-live-editor.js', 'modals.js', 'project-state.js', 'service-controls.js',
   'view-state.js', 'views-board.js', 'views-table.js', 'visibility.js',
   'vendor/preact-standalone.module.js',

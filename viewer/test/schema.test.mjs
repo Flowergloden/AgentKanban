@@ -26,6 +26,39 @@ test('合法自定义字段按顺序保留并规范化引用默认值', async ()
   assert.deepEqual(schema.fields.at(-1).default, ['0002']);
 });
 
+test('file 字段规范化默认路径并支持 required，默认 schema 不增加核心文件字段', () => {
+  const input = defaultSchema();
+  input.fields.push(
+    { key: 'artifacts', label: '项目文件', type: 'file', description: '交付文件。', default: ['docs\\指南//a.md', 'docs/指南/a.md', '缺失也可.txt'] },
+    { key: 'optional-files', label: '可选文件', type: 'file', description: '可选文件。' },
+  );
+  const schema = validateSchema(input);
+  assert.deepEqual(schema.fields.at(-2).default, ['docs/指南/a.md', '缺失也可.txt']);
+  assert.deepEqual(schema.fields.at(-1).default, []);
+  assert.ok(!defaultSchema().fields.some((field) => field.type === 'file'));
+
+  const required = defaultSchema();
+  required.fields.push({ key: 'required-files', label: '必填文件', type: 'file', description: '必填。', required: true, default: ['docs/a.md'] });
+  assert.deepEqual(validateSchema(required).fields.at(-1).default, ['docs/a.md']);
+});
+
+test('file 默认值非法或必填空默认时拒绝 schema，且不能绑定非表格视图', () => {
+  for (const field of [
+    { key: 'artifacts', label: '项目文件', type: 'file', description: '文件。', default: '../outside.txt' },
+    { key: 'artifacts', label: '项目文件', type: 'file', description: '文件。', default: ['../outside.txt'] },
+    { key: 'artifacts', label: '项目文件', type: 'file', description: '文件。', required: true },
+  ]) {
+    const schema = defaultSchema();
+    schema.fields.push(field);
+    assert.throws(() => validateSchema(schema), /\$\.fields\[\d+\]\.default/);
+  }
+
+  const schema = defaultSchema();
+  schema.fields.push({ key: 'artifacts', label: '项目文件', type: 'file', description: '文件。' });
+  schema.views[1].fieldKey = 'artifacts';
+  assert.throws(() => validateSchema(schema), /必须绑定 select 或 reference 字段：artifacts（当前 file）/);
+});
+
 test('默认 schema 显式包含默认三视图，kind 不进入配置', () => {
   const schema = defaultSchema();
   assert.deepEqual(schema.views, [

@@ -9,6 +9,7 @@ import { loadServiceMetadata } from './metadata.mjs';
 import { registryPaths, loadRegistry, saveRegistry, canonicalRoot } from './registry.mjs';
 import { createLifecycle, CHECK_INTERVAL_MS } from './lifecycle.mjs';
 import { acquireLock, ownsLock } from './lock.mjs';
+import { FileReferenceError, readFileReference, selectFileReferences } from './file-references.mjs';
 
 const HOST = '127.0.0.1';
 const PORT = process.env.AGENT_KANBAN_PORT ? Number(process.env.AGENT_KANBAN_PORT) : 4731;
@@ -377,6 +378,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, data);
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/thread/file') {
+      res.setHeader('Cache-Control', 'no-store');
+      const root = requireRegisteredRoot(url.searchParams.get('root'));
+      const id = requireId(url.searchParams.get('id'));
+      const result = await readFileReference(root, id, url.searchParams.get('fieldKey'), url.searchParams.get('path'));
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/thread') {
       const root = requireCanonicalRoot(url.searchParams.get('root'));
       const id = requireId(url.searchParams.get('id'));
@@ -390,6 +399,19 @@ const server = http.createServer(async (req, res) => {
         requireRegisteredRoot(body.root), requireId(body.id), body.fieldKey, body, body.fingerprint,
       );
       return sendJson(res, 200, result);
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/thread/file-selection') {
+      if (!guardSameOriginJson(req, res)) return;
+      const body = await readJsonBody(req);
+      const root = requireRegisteredRoot(body.root);
+      const id = requireId(body.id);
+      lifecycle.retain();
+      try {
+        return sendJson(res, 200, await selectFileReferences(root, id, body.fieldKey));
+      } finally {
+        lifecycle.release();
+      }
     }
 
     if (req.method === 'PUT' && url.pathname === '/api/thread/section') {
@@ -473,6 +495,9 @@ const server = http.createServer(async (req, res) => {
 
     sendJson(res, 404, { error: 'not found' });
   } catch (err) {
+    if (err instanceof FileReferenceError) {
+      return sendJson(res, err.status, { error: err.message, code: err.code, ...(err.rejected.length ? { rejected: err.rejected } : {}) });
+    }
     if (err instanceof threads.ThreadError) {
       return sendJson(res, statusOfThreadError(err), { error: err.message, code: err.code });
     }

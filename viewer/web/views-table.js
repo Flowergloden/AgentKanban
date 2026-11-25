@@ -1,5 +1,5 @@
 import { html, useEffect, useState } from './vendor/preact-standalone.module.js';
-import { MarkdownFieldEditor, ReferenceFieldControl, SelectFieldControl } from './field-controls.js';
+import { FileFieldControl, MarkdownFieldEditor, ReferenceFieldControl, SelectFieldControl } from './field-controls.js';
 
 function formatTime(mtimeMs) {
   if (!mtimeMs) return '—';
@@ -8,7 +8,7 @@ function formatTime(mtimeMs) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function ThreadTable({ root, threads, schema, onOpen, onChanged }) {
+export function ThreadTable({ root, threads, schema, onOpen, onChanged, onPreview }) {
   const [expanded, setExpanded] = useState(null);
   useEffect(() => {
     if (expanded && (!threads.some((thread) => thread.id === expanded.id) || !schema.fields.some((field) => field.key === expanded.fieldKey && field.type === 'markdown'))) setExpanded(null);
@@ -36,9 +36,11 @@ export function ThreadTable({ root, threads, schema, onOpen, onChanged }) {
                 </button>
               ` : field.type === 'select' ? html`
                 <${SelectFieldControl} root=${root} threadId=${thread.id} field=${field} value=${value} fingerprint=${thread.fingerprint} onChanged=${onChanged} />
-              ` : html`
+              ` : field.type === 'reference' ? html`
                 <${ReferenceFieldControl} root=${root} threadId=${thread.id} field=${field} value=${value} fingerprint=${thread.fingerprint} threads=${threads} onOpen=${onOpen} onChanged=${onChanged} />
-              `}
+              ` : field.type === 'file' ? html`
+                <${FileFieldControl} root=${root} threadId=${thread.id} field=${field} value=${value} fingerprint=${thread.fingerprint} onChanged=${onChanged} onPreview=${onPreview} />
+              ` : html`<span class="badge-error">不支持的字段类型：${field.type}</span>`}
             </td>`;
           })}
         </tr>

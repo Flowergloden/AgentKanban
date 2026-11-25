@@ -26,6 +26,39 @@ test('activity resets idle timer; persistent ignores idle; cancel resets timer',
   assert.equal(state.expired(), true);
 });
 
+test('活动租约嵌套保活，异常路径释放后重新计时，persistent 不受影响', async () => {
+  let now = 0;
+  const state = createLifecycle({ now: () => now });
+  state.retain();
+  state.retain();
+  now = IDLE_TIMEOUT_MS * 2;
+  assert.equal(state.expired(), false);
+  state.release();
+  assert.equal(state.expired(), false);
+  state.release();
+  assert.equal(state.expired(), false);
+  assert.equal(state.lastActivityAt, now);
+
+  state.retain();
+  try {
+    await Promise.reject(new Error('选择失败'));
+  } catch {
+    // 模拟路由异常后继续执行 finally。
+  } finally {
+    state.release();
+  }
+  assert.equal(state.expired(), false);
+  now += IDLE_TIMEOUT_MS + 1;
+  assert.equal(state.expired(), true);
+
+  state.retain();
+  state.setMode('persistent');
+  state.release();
+  now += IDLE_TIMEOUT_MS * 2;
+  assert.equal(state.expired(), false);
+  state.release();
+});
+
 test('registration, activity, heartbeat and business requests work; invalid requests do not record project', async (t) => {
   await withServer(t, async ({ url }) => {
     const root = 'C:\\临时 项目\\kanban';

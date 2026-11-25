@@ -6,6 +6,8 @@ const markdown = { key: 'goal', type: 'markdown', required: false };
 const requiredSelect = { key: 'status', type: 'select', required: true, options: ['立项', '完成'] };
 const optionalSelect = { key: 'priority', type: 'select', required: false, options: ['高', '低'] };
 const reference = { key: 'dependencies', type: 'reference', required: false };
+const file = { key: 'artifacts', type: 'file', required: false };
+const requiredFile = { key: 'artifacts', type: 'file', required: true };
 const changes = { key: 'changes', type: 'markdown', required: false };
 
 test('markdown 摘要排除注释、折叠空白并截断，解析保留自由 Markdown', () => {
@@ -31,6 +33,25 @@ test('reference 去重保序、保留悬空序号并忽略注释和非法行', (
   assert.equal(serializeField(['0002', '0009'], reference), '- 0002\n- 0009');
   assert.throws(() => validateField(['2'], reference), /四位线程序号数组/);
   assert.throws(() => validateField('0002', reference), /四位线程序号数组/);
+});
+
+test('file 解析合法旧列表、忽略非法原文并保序去重，且不修改原始内容', () => {
+  const raw = '<!-- - docs/comment.md -->\n- docs\\指南//a draft.md\n- docs/指南/a draft.md\n- /absolute.txt\n- ../outside.txt\n非列表内容\n';
+  const before = raw.slice();
+  assert.deepEqual(parseField(raw, file), ['docs/指南/a draft.md']);
+  assert.equal(raw, before);
+  assert.deepEqual(parseField('- docs/not-created-yet.md', file), ['docs/not-created-yet.md']);
+});
+
+test('file 显式更新统一规范化并整批拒绝非法值，序列化一行一条', () => {
+  assert.deepEqual(validateField(['docs\\a.md', 'docs/a.md', '中文 空格.txt'], file), ['docs/a.md', '中文 空格.txt']);
+  assert.equal(serializeField(['docs\\a.md', '中文 空格.txt'], file), '- docs/a.md\n- 中文 空格.txt');
+  assert.deepEqual(validateField(['docs/not-created-yet.md'], requiredFile), ['docs/not-created-yet.md']);
+  assert.throws(() => validateField([], requiredFile), /不能为空/);
+  assert.throws(() => validateField('docs/a.md', file), /项目相对文件路径数组/);
+  for (const value of [['docs/a.md', '../outside.txt'], ['C:\\a.txt'], ['docs/'], ['a\0b']]) {
+    assert.throws(() => validateField(value, file), /字段 artifacts/);
+  }
 });
 
 test('Changes 始终作为 markdown，不进入引用解析', () => {

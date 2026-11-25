@@ -1,3 +1,5 @@
+import { normalizeFilePath } from './file-paths.mjs';
+
 export class FieldError extends Error {
   constructor(field, message) {
     super(`字段 ${field.key}：${message}`);
@@ -26,6 +28,18 @@ export function parseField(raw, field) {
     }
     return values;
   }
+  if (field.type === 'file') {
+    const values = [];
+    for (const line of stripComments(raw).split(/\r?\n/)) {
+      const match = line.match(/^\s*-\s*(.*?)\s*$/);
+      if (!match) continue;
+      try {
+        const normalized = normalizeFilePath(match[1]);
+        if (!values.includes(normalized)) values.push(normalized);
+      } catch { }
+    }
+    return values;
+  }
   throw new FieldError(field, `不支持的类型 ${field.type}`);
 }
 
@@ -49,12 +63,26 @@ export function validateField(value, field) {
     if (field.required && normalized.length === 0) throw new FieldError(field, '不能为空');
     return normalized;
   }
+  if (field.type === 'file') {
+    if (!Array.isArray(value)) throw new FieldError(field, '值必须是项目相对文件路径数组');
+    const normalized = [];
+    for (const item of value) {
+      try {
+        const filePath = normalizeFilePath(item);
+        if (!normalized.includes(filePath)) normalized.push(filePath);
+      } catch (error) {
+        throw new FieldError(field, error.message);
+      }
+    }
+    if (field.required && normalized.length === 0) throw new FieldError(field, '不能为空');
+    return normalized;
+  }
   throw new FieldError(field, `不支持的类型 ${field.type}`);
 }
 
 export function serializeField(value, field) {
   const normalized = validateField(value, field);
-  if (field.type === 'reference') return normalized.map((item) => `- ${item}`).join('\n');
+  if (field.type === 'reference' || field.type === 'file') return normalized.map((item) => `- ${item}`).join('\n');
   return normalized;
 }
 

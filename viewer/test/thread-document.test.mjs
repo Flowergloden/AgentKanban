@@ -86,6 +86,35 @@ test('字段更新仅替换目标并保留未映射原文，缺失字段在末�
   assert.equal(await readFile(file, 'utf8'), appended);
 });
 
+test('file 字段按默认数组创建，旧卷宗空值投影不改写，首次保存补建并保留 409', async (t) => {
+  const root = await project(t);
+  const schema = defaultSchema();
+  schema.fields.push({ key: 'artifacts', label: '项目文件', type: 'file', description: '项目内文件。', default: ['docs\\默认.md', 'docs/默认.md'], required: true });
+  await writeFile(path.join(root, 'kanban', 'thread.schema.json'), JSON.stringify(schema));
+  const { id } = await threads.create(root, '文件字段', 'file-field');
+  const file = path.join(root, 'kanban', 'threads', id, 'thread.md');
+  const created = await readFile(file, 'utf8');
+  assert.match(created, /<!-- kanban:field=artifacts -->/);
+  assert.match(created, /- docs\/默认.md/);
+  assert.doesNotMatch(created, /- docs\/默认.md\n- docs\/默认.md/);
+
+  const legacy = created.replace(/\n## 项目文件[\s\S]*$/, '\n');
+  await writeFile(file, legacy);
+  const detail = await threads.getThread(root, id);
+  assert.deepEqual(detail.fields.artifacts.value, []);
+  assert.equal(detail.fields.artifacts.missing, true);
+  assert.equal(await readFile(file, 'utf8'), legacy);
+
+  await threads.updateField(root, id, 'artifacts', ['docs\\新 文件.md', 'missing.txt'], detail.fingerprint);
+  const updated = await readFile(file, 'utf8');
+  assert.match(updated, /## 项目文件\n\n<!-- kanban:field=artifacts -->[\s\S]*- docs\/新 文件.md\n- missing.txt\n$/);
+  assert.match(updated, /<!-- 项目内文件。 -->/);
+  const current = await threads.getThread(root, id);
+  await assert.rejects(threads.updateField(root, id, 'artifacts', ['../outside.txt'], current.fingerprint), /项目相对路径|路径段/);
+  await assert.rejects(threads.updateField(root, id, 'artifacts', [], 'stale'), (error) => error.code === 'conflict');
+  assert.equal(await readFile(file, 'utf8'), updated);
+});
+
 test('非法 schema 阻止创建与字段写入，不静默回退', async (t) => {
   const root = await project(t);
   const { id } = await threads.create(root, '配置错误', 'bad-schema');

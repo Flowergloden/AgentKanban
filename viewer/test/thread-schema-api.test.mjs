@@ -53,6 +53,45 @@ test('列表与详情返回 schema 驱动投影并保留兼容字段', async (t)
   });
 });
 
+test('通用字段接口支持 file 创建、空值投影、保存、非法值与 409', async (t) => {
+  await withServer(t, async ({ url, dir }) => {
+    const root = await registeredProject(url, dir);
+    await fetch(url + '/api/init', json('POST', { root }));
+    const schema = defaultSchema();
+    schema.fields.push({ key: 'artifacts', label: '项目文件', type: 'file', description: '项目内文件，一行一条。', default: ['docs\\默认.md'] });
+    await writeFile(path.join(root, 'kanban', 'thread.schema.json'), JSON.stringify(schema));
+    const createdResponse = await fetch(url + '/api/threads', json('POST', { root, title: '文件字段', slug: 'file-fields' }));
+    assert.equal(createdResponse.status, 200);
+    const { id } = await createdResponse.json();
+    const file = path.join(root, 'kanban', 'threads', id, 'thread.md');
+    const get = () => fetch(`${url}/api/thread?root=${encodeURIComponent(root)}&id=${id}`).then((response) => response.json());
+    const put = (value, fingerprint) => fetch(url + '/api/thread/field', json('PUT', { root, id, fieldKey: 'artifacts', value, fingerprint }));
+
+    let detail = await get();
+    assert.deepEqual(detail.fields.artifacts.value, ['docs/默认.md']);
+    const withoutFile = (await readFile(file, 'utf8')).replace(/\n## 项目文件[\s\S]*$/, '\n');
+    await writeFile(file, withoutFile);
+    detail = await get();
+    assert.deepEqual(detail.fields.artifacts.value, []);
+    assert.equal(detail.fields.artifacts.missing, true);
+    assert.equal(await readFile(file, 'utf8'), withoutFile);
+
+    let response = await put(['docs\\新 文件.md', 'docs/新 文件.md', 'missing.txt'], detail.fingerprint);
+    assert.equal(response.status, 200);
+    detail = await get();
+    assert.deepEqual(detail.fields.artifacts.value, ['docs/新 文件.md', 'missing.txt']);
+    const saved = await readFile(file, 'utf8');
+    assert.match(saved, /## 项目文件\n\n<!-- kanban:field=artifacts -->/);
+
+    response = await put(['docs/valid.md', '../outside.txt'], detail.fingerprint);
+    assert.equal(response.status, 400);
+    assert.equal(await readFile(file, 'utf8'), saved);
+    response = await put([], 'stale');
+    assert.equal(response.status, 409);
+    assert.equal(await readFile(file, 'utf8'), saved);
+  });
+});
+
 test('通用字段接口支持三类写入、缺字段补建、409 与输入校验', async (t) => {
   await withServer(t, async ({ url, dir }) => {
     const root = await registeredProject(url, dir);

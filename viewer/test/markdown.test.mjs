@@ -142,6 +142,27 @@ test('渲染不修改传入原文（CRLF、末尾换行、中文原样保留在�
   assert.match(crlf, /<li>第一行<\/li>/);
 });
 
+test('文件 Markdown 禁止图片策略显示替代文本，普通 Markdown 保持既有图片渲染', () => {
+  const source = '![本地 <图片>](secret.png)';
+  const disabled = parseMarkdown(source, { disableImages: true });
+  assert.doesNotMatch(disabled, /<img|secret\.png/);
+  assert.match(disabled, /本地 &lt;图片&gt;/);
+  assert.match(parseMarkdown(source), /<img src="secret\.png" alt="本地 &lt;图片&gt;">/);
+
+  const raw = '<img src="file:///secret.png" alt="原始图片" onerror="alert(1)">';
+  if (sanitizerAvailable()) {
+    const clean = sanitizeHtml(raw, { disableImages: true });
+    assert.doesNotMatch(clean, /<img|file:|onerror/);
+    assert.match(clean, /原始图片/);
+    assert.match(sanitizeHtml(raw), /<img/);
+  } else {
+    const result = renderMarkdown(raw, { disableImages: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.html, undefined);
+    assert.equal(result.text, raw);
+  }
+});
+
 test('清理组件不可用时回退为转义模式并保留原文，不产出 HTML', () => {
   // Node 环境无 DOM：必须走回退路径，禁止把未清理 HTML 交给调用方
   assert.equal(sanitizerAvailable(), false);

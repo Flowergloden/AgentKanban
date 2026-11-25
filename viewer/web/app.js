@@ -7,6 +7,7 @@ import { TABLE_VIEW, isViewValid, listProjection, viewsForSchema } from './view-
 import { BoardView } from './views-board.js';
 import { DepGraphView } from './dep-graph.js';
 import { ThreadDetail } from './detail.js';
+import { FilePreviewModal } from './file-preview.js';
 import { CreateModal, DeleteModal, NoteModal, P4AddModal, ManageModal } from './modals.js';
 import { createExternalSync } from './external-sync.js';
 import {
@@ -30,6 +31,7 @@ function App() {
   const [showNote, setShowNote] = useState(false);
   const [showManage, setShowManage] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
   const [addRequest, setAddRequest] = useState(null); // { files: [...] }：P4 新建文件待询问 add
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -318,6 +320,7 @@ function App() {
               onBack=${() => { setSelectedId(null); refresh(); }}
               onOpen=${openThread}
               onChanged=${() => refresh()}
+              onPreview=${(filePath, field, threadId) => setFilePreview({ filePath, field, threadId })}
               onRequestDelete=${(id) => setDeleteTarget({ root, id, title: threads.find((t) => t.id === id)?.title ?? id, active: activeThread?.id === id })}
             />
           ` : view.kind === 'board' ? html`
@@ -325,7 +328,7 @@ function App() {
           ` : view.kind === 'graph' ? html`
             <${DepGraphView} root=${root} threads=${threads} fieldKey=${view.fieldKey} onOpen=${openThread} onChanged=${() => refresh()} />
           ` : html`
-            <${ThreadTable} root=${root} threads=${threads} schema=${schema} onOpen=${openThread} onChanged=${() => refresh()} />
+            <${ThreadTable} root=${root} threads=${threads} schema=${schema} onOpen=${openThread} onChanged=${() => refresh()} onPreview=${(filePath, field, threadId) => setFilePreview({ filePath, field, threadId })} />
           `}
         `}
       `}
@@ -357,6 +360,14 @@ function App() {
         currentRoot=${root}
         onClose=${() => setShowManage(false)}
         onManaged=${onManaged}
+      />
+    `}
+    ${filePreview && html`
+      <${FilePreviewModal}
+        root=${root}
+        threadId=${filePreview.threadId}
+        selection=${filePreview}
+        onClose=${() => setFilePreview(null)}
       />
     `}
     ${deleteTarget && html`

@@ -21,6 +21,8 @@ test('系统选择器使用 STA WinForms、多选与项目根初始目录，并�
   assert.match(invocation.script, /Multiselect = \$true/);
   assert.match(invocation.script, /AGENT_KANBAN_FILE_ROOT/);
   assert.match(invocation.script, /UTF8Encoding/);
+  assert.match(invocation.script, /TopMost = \$true/);
+  assert.match(invocation.script, /ShowDialog\(\$owner\)/);
 });
 
 test('用户取消返回空列表', async () => {

@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
 const pickerScript = String.raw`
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 $utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
 [Console]::OutputEncoding = $utf8
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
@@ -14,8 +15,16 @@ $dialog.CheckFileExists = $true
 $dialog.CheckPathExists = $true
 $dialog.InitialDirectory = $env:AGENT_KANBAN_FILE_ROOT
 $dialog.Title = '选择项目文件'
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+$owner.Size = New-Object System.Drawing.Size(1, 1)
 try {
-  if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  $owner.Show()
+  $owner.Activate()
+  if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
     $json = ConvertTo-Json -InputObject @($dialog.FileNames) -Compress
   } else {
     $json = '[]'
@@ -23,6 +32,7 @@ try {
   [Console]::Out.Write($json)
 } finally {
   $dialog.Dispose()
+  $owner.Dispose()
 }
 `;
 

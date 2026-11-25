@@ -37,6 +37,13 @@
       "required": false
     },
     {
+      "key": "docs",
+      "label": "文档",
+      "type": "file",
+      "description": "（可选）本线程涉及到的文档。一行一条",
+      "required": false
+    },
+    {
       "key": "changes",
       "label": "Changes",
       "type": "markdown",
